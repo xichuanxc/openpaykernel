@@ -738,7 +738,7 @@ opk_contact_process(&env, &txn, &reader, &host, &out, &db);
 
 ### Using the Rust crate
 
-Add it as a Git dependency (the repository is private, so Cargo needs Git credentials for it):
+Add it as a Git dependency (it is not published on crates.io):
 
 ```toml
 [dependencies]
@@ -1064,7 +1064,7 @@ openpaykernel/
 - ECC ODA (Book E) and SM2/SM3
 - Terminal CLI with persistent configuration (PC/SC adapters already in `examples/`)
 - Issuer-side cryptogram (ARQC) verification for host simulators
-- Rust: allocation-free (`heapless`) variant, a PC/SC example using the `pcsc` crate, publishing to crates.io once public
+- Rust: allocation-free (`heapless`) variant, a PC/SC example using the `pcsc` crate, publishing to crates.io once released
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and
 [docs/CLEAN_ROOM.md](docs/CLEAN_ROOM.md) for how this code was produced.
