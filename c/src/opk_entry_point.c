@@ -43,7 +43,23 @@ static uint32_t requested_kernel(const uint8_t *kid, size_t kl, const uint8_t *a
     return v;
 }
 
-static int kernel_supported(uint32_t k) { return k == OPK_KERNEL_VISA || k == OPK_KERNEL_MASTERCARD; }
+typedef int (*kernel_fn)(const opk_kernel_ctx *k, opk_outcome *out);
+
+/* Kernel registry: ID -> implementation. Kernel 7 (UnionPay qUICS) reuses the qVSDC engine. */
+static kernel_fn kernel_for(uint32_t k)
+{
+    switch (k) {
+    case OPK_KERNEL_MASTERCARD: return opk_kernel_mastercard;
+    case OPK_KERNEL_VISA: return opk_kernel_visa;
+    case OPK_KERNEL_UNIONPAY: return opk_kernel_visa;
+    default: return NULL;
+    }
+}
+
+static int kernel_supported(uint32_t k) { return kernel_for(k) != NULL; }
+
+/* Kernels whose PDOL carries the Terminal Transaction Qualifiers built at pre-processing */
+static int uses_ttq(uint32_t k) { return k == OPK_KERNEL_VISA || k == 6u || k == OPK_KERNEL_UNIONPAY; }
 
 static void try_again(opk_outcome *out)
 {
@@ -88,7 +104,7 @@ int opk_contactless_process(const opk_env *env, const opk_transaction *txn, cons
             c->floor_exceeded = 1;
         if (cfg->cvm_required_limit >= 0 && amount >= cfg->cvm_required_limit)
             c->cvm_limit_exceeded = 1;
-        if (c->kernel_id == OPK_KERNEL_VISA) {
+        if (uses_ttq(c->kernel_id)) {
             memcpy(c->ttq, cfg->ttq, 4);
             c->ttq[1] &= 0x3F;
             if (c->status_check || c->zero_amount || c->floor_exceeded)
@@ -192,7 +208,7 @@ int opk_contactless_process(const opk_env *env, const opk_transaction *txn, cons
             memcpy(k.ttq, combos[c->combo].ttq, 4);
             k.has_ttq = 1;
         }
-        int r = c->kernel_id == OPK_KERNEL_VISA ? opk_kernel_visa(&k, out) : opk_kernel_mastercard(&k, out);
+        int r = kernel_for(c->kernel_id)(&k, out);
         if (r == OPK_ERR_TRANSMIT) {
             try_again(out);
             return OPK_OK;

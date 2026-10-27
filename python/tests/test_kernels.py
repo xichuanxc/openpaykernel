@@ -1,4 +1,5 @@
-from openpaykernel import AutoHost, ContactKernel, EntryPoint, MastercardKernel, OnlineResponse, TerminalConfig, VisaKernel
+from openpaykernel import (AutoHost, ContactKernel, EntryPoint, MastercardKernel, OnlineResponse, TerminalConfig,
+                           UnionPayKernel, VisaKernel)
 from openpaykernel.config import bit
 from openpaykernel.outcome import CVM, L2Error, Status
 from openpaykernel.sim.card import CardProfile, SimCard, VISA_AID
@@ -7,7 +8,7 @@ import scenarios as sc
 
 
 def ep(*aids):
-    return EntryPoint(sc.env(list(aids)), [VisaKernel(), MastercardKernel()])
+    return EntryPoint(sc.env(list(aids)), [VisaKernel(), MastercardKernel(), UnionPayKernel()])
 
 
 # ---------------------------------------------------------------------------- Visa
@@ -270,3 +271,27 @@ def test_malformed_pin_from_host_is_a_failed_cvm():
     # rule 41 03 ("apply next"): falls through to No CVM required
     res = contact(sc.contact_card(cvm_list=bytes.fromhex("000000000000000041031F03")), AutoHost(pin="12"))
     assert res.data[0x9F34] == bytes.fromhex("1F0302")
+
+
+# ---------------------------------------------------------------------------- UnionPay (kernel 7)
+def test_upi_offline_approved_with_fdda_and_offline_balance():
+    out = ep(sc.upi_aid_cfg()).process(sc.upi_card(), sc.txn(1000))
+    assert out.status == Status.APPROVED, out
+    assert out.data_record[0x9F5D] == bytes.fromhex("000000050000")
+    assert bit(out.data_record[0x9F66], 1, 6)  # qUICS/qVSDC supported in TTQ
+
+
+def test_upi_cvm_required_signature_online():
+    out = ep(sc.upi_aid_cfg()).process(sc.upi_card(ctq=bytes.fromhex("4000"), decision="online"), sc.txn(4000))
+    assert out.status == Status.ONLINE_REQUEST and out.cvm == CVM.SIGNATURE
+
+
+def test_upi_fdda_failure_declines():
+    out = ep(sc.upi_aid_cfg()).process(sc.upi_card(corrupt_sdad=True, ctq=bytes.fromhex("0000")), sc.txn(1000))
+    assert out.status == Status.DECLINED
+
+
+def test_upi_selected_by_rid_default_kernel_id():
+    # AID config without an explicit kernel ID resolves to kernel 7 from the UnionPay RID
+    out = ep(sc.upi_aid_cfg(kernel_id=0)).process(sc.upi_card(), sc.txn(1000))
+    assert out.status == Status.APPROVED

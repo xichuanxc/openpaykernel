@@ -30,7 +30,9 @@ def cid_from_iad(iad: bytes | None) -> int:
 
 
 class VisaKernel:
+    """qVSDC flow. UnionPay qUICS (kernel 7) reuses it through a subclass that changes the profile."""
     kernel_id = 3
+    data_record_tags = DATA_RECORD_TAGS
 
     def start(self, ctx: KernelContext) -> Outcome:
         s = Session.new(ctx.env, ctx.aid_cfg, ctx.txn, ctx.chan)
@@ -173,7 +175,7 @@ class VisaKernel:
                       ui_request=UIRequest(msg, "CARD_READ_OK" if status == Status.ONLINE_REQUEST else "NOT_READY"),
                       online_response_data=None,
                       error=ErrorIndication())
-        out.data_record = {t: s.db[t] for t in DATA_RECORD_TAGS if t in s.db}
+        out.data_record = {t: s.db[t] for t in self.data_record_tags if t in s.db}
         return out
 
 

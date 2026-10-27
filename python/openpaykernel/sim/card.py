@@ -17,6 +17,7 @@ enc = tlv.encode
 
 MASTERCARD_AID = bytes.fromhex("A0000000041010")
 VISA_AID = bytes.fromhex("A0000000031010")
+UNIONPAY_AID = bytes.fromhex("A000000333010102")
 TEST_RID_INDEX = 0x92
 
 
@@ -200,7 +201,7 @@ class SimCard:
         r4 = enc(0x9F46, icc_cert) + enc(0x9F48, icc_rem) + enc(0x9F47, k.icc.exponent)
         # Records are kept under the 256-byte short-APDU response limit, as on a real card.
         sfi2 = [enc(0x70, r3)]
-        if p.oda in ("dda", "cda") or p.kind == "visa":
+        if p.oda in ("dda", "cda") or p.kind in ("visa", "unionpay"):
             sfi2.append(enc(0x70, r4))
         if p.oda == "sda":
             sfi2.append(enc(0x70, enc(0x93, rsa.signed_static_data(k.issuer, static))))
@@ -221,7 +222,7 @@ class SimCard:
             return b"\x67\x00"
         self.pdol_data = n[0].value
         self.atc_value = p.atc + 1
-        if p.kind == "visa":
+        if p.kind in ("visa", "unionpay"):
             return self._visa_gpo()
         return enc(0x77, enc(0x82, p.aip) + enc(0x94, self.afl)) + b"\x90\x00"
 
@@ -252,6 +253,8 @@ class SimCard:
         if p.ctq:
             body += enc(0x9F6C, p.ctq)
         body += enc(0x9F6E, bytes.fromhex("20700000"))
+        if p.kind == "unionpay":
+            body += enc(0x9F5D, bytes.fromhex("000000050000"))  # available offline spending amount
         if ctype == 0x40 and p.aip[0] & 0x20:
             card_auth = b"\x01" + hashlib.sha1(b"cardun").digest()[:4] + (p.ctq or b"\x00\x00")
             body += enc(0x9F69, card_auth)

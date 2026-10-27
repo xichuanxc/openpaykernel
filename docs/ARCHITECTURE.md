@@ -75,7 +75,7 @@
 | Primitives (TLV, DOL, SHA-1, RSA, certificates) | `test_core.py` | `test_core.c` | `tests/core.rs` |
 | End-to-end flows vs. simulated cards | `test_kernels.py` (29 scenarios) | — | — |
 | Hardware adapter path | `test_hardware_adapter.py` (fake pyscard) | `reader_template` example (CI) | `reader_template` example (CI) |
-| Cross-language conformance (byte-exact APDUs) | `gen_vectors.py` generates `conformance/vectors` | `test_vectors.c` replays (19) | `tests/conformance.rs` replays (19) |
+| Cross-language conformance (byte-exact APDUs) | `gen_vectors.py` generates `conformance/vectors` | `test_vectors.c` replays them all | `tests/conformance.rs` replays them all |
 | Robustness against corrupted card data | `test_robustness.py` | `OPK_FUZZ` mode under ASan/UBSan | `OPK_FUZZ` no-panic test |
 
 The simulator (`openpaykernel/sim`) personalises cards with real RSA keys and certificates. The CA

@@ -16,10 +16,10 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 import scenarios as sc  # noqa: E402
 from openpaykernel import AutoHost, ContactKernel, EntryPoint, MastercardKernel, OnlineResponse, TerminalConfig, \
-    VisaKernel  # noqa: E402
+    UnionPayKernel, VisaKernel  # noqa: E402
 from openpaykernel.config import AidConfig  # noqa: E402
 
-REPORT_TAGS = [0x95, 0x9B, 0x9F34, 0x9F27, 0x8A, 0x9F66, 0x9F5B]
+REPORT_TAGS = [0x95, 0x9B, 0x9F34, 0x9F27, 0x8A, 0x9F66, 0x9F5B, 0x9F5D]
 
 
 def h(b: bytes) -> str:
@@ -82,7 +82,7 @@ def emit_result(lines, card, out, data):
 
 def contactless(name, card, aids, txn):
     env = sc.env(aids)
-    out = EntryPoint(env, [VisaKernel(), MastercardKernel()]).process(card, txn)
+    out = EntryPoint(env, [VisaKernel(), MastercardKernel(), UnionPayKernel()]).process(card, txn)
     lines = [f"SCENARIO {name}", "MODE contactless"]
     emit_config(lines, sc.env(aids), txn)
     emit_result(lines, card, out, out.data_record)
@@ -112,6 +112,11 @@ def all_vectors():
     yield contactless("mc_online_pin", sc.mc_card(), [sc.mc_aid_cfg()], sc.txn(15000))
     yield contactless("mc_cdcvm", sc.mc_card(aip=bytes.fromhex("1B80")), [sc.mc_aid_cfg()], sc.txn(40000))
     yield contactless("mc_two_brands_ppse", sc.mc_card(), [sc.visa_aid_cfg(), sc.mc_aid_cfg()], sc.txn(1000))
+    yield contactless("upi_offline_approved", sc.upi_card(), [sc.upi_aid_cfg()], sc.txn(1000))
+    yield contactless("upi_signature_online", sc.upi_card(ctq=bytes.fromhex("4000"), decision="online"),
+                      [sc.upi_aid_cfg()], sc.txn(4000))
+    yield contactless("upi_fdda_fail_declined", sc.upi_card(corrupt_sdad=True, ctq=bytes.fromhex("0000")),
+                      [sc.upi_aid_cfg()], sc.txn(1000))
     yield contact("contact_dda_offline_pin",
                   sc.contact_card(cvm_list=bytes.fromhex("000000000000000041031E031F03")), sc.txn(2000),
                   ScriptHost())

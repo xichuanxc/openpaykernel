@@ -11,6 +11,9 @@ from .outcome import (ErrorIndication, L1Error, L2Error, Message, Outcome, Start
 
 PPSE = b"2PAY.SYS.DDF01"
 
+# Kernels whose PDOL carries the Terminal Transaction Qualifiers (9F66) built at pre-processing
+TTQ_KERNELS = (3, 6, 7)
+
 KERNEL_DEFAULT_BY_RID = {
     bytes.fromhex("A000000004"): 2,  # Mastercard
     bytes.fromhex("A000000003"): 3,  # Visa
@@ -121,7 +124,7 @@ class EntryPoint:
                 p.floor_limit_exceeded = True
             if cfg.cvm_required_limit is not None and amount >= cfg.cvm_required_limit:
                 p.cvm_required_limit_exceeded = True
-            if kid == 3:
+            if kid in TTQ_KERNELS:
                 ttq = bytearray(cfg.ttq)
                 ttq[1] &= 0x3F  # clear 'online cryptogram required' and 'CVM required'
                 if p.status_check or p.zero_amount or p.floor_limit_exceeded:

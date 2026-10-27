@@ -10,9 +10,10 @@ kernel. It comes as three implementations that behave the same way, byte for byt
 | Contactless Entry Point (Book B) | ✅ | ✅ | ✅ |
 | Kernel 3: Visa qVSDC (Book C-3) | ✅ | ✅ | ✅ |
 | Kernel 2: Mastercard EMV mode (Book C-2) | ✅ | ✅ | ✅ |
+| Kernel 7: UnionPay qUICS (Book C-7) | ✅ | ✅ | ✅ |
 | ODA: SDA / DDA / fDDA / CDA (RSA, SHA-1) | ✅ | ✅ | ✅ |
 | Card simulator + key/certificate generator | ✅ | n/a (replays the vectors) | n/a (replays the vectors) |
-| Conformance vectors (19 scenarios) | generates them | ✅ byte-identical | ✅ byte-identical |
+| Conformance vectors (22 scenarios) | generates them | ✅ byte-identical | ✅ byte-identical |
 
 > [!CAUTION]
 > **For study and research only. Do not use it to move real money.**
@@ -38,6 +39,7 @@ flowchart TB
         ep["<b>Entry Point</b> · Book B<br/>pre-processing · PPSE · candidate list · final selection"]
         k2["<b>Kernel 2</b> · Book C-2<br/>Mastercard, EMV mode"]
         k3["<b>Kernel 3</b> · Book C-3<br/>Visa qVSDC"]
+        k7["<b>Kernel 7</b> · Book C-7<br/>UnionPay qUICS"]
     end
 
     subgraph CT["Contact"]
@@ -53,14 +55,17 @@ flowchart TB
     host --> ck
     ep -- "kernel ID" --> k2
     ep -- "kernel ID" --> k3
+    ep -- "kernel ID" --> k7
     k2 --> proc
     k3 --> proc
+    k7 --> proc
     ck --> proc
     proc --> oda
     oda --> core
     proc --> core
     k2 -.-> out
     k3 -.-> out
+    k7 -.-> out
     ck -.-> out
     out -.-> host
 ```
@@ -129,6 +134,7 @@ Each Python module has a matching C file and Rust module, and the shared conform
 | Entry Point | `entry_point.py` | `opk_entry_point.c` | `entry_point.rs` | Book B |
 | Kernel 2 (Mastercard) | `kernels/mastercard.py` | `opk_mastercard.c` | `kernels/mastercard.rs` | Book C-2 |
 | Kernel 3 (Visa) | `kernels/visa.py` | `opk_visa.c` | `kernels/visa.rs` | Book C-3 |
+| Kernel 7 (UnionPay) | `kernels/unionpay.py` (Visa engine + profile) | `opk_visa.c` (shared quick-flow engine) | `kernels/unionpay.rs` | Book C-7 |
 | Contact kernel | `contact.py` | `opk_contact.c` | `contact.rs` | Books 1–4 |
 | Card simulator | `sim/card.py`, `sim/rsa.py` | — (replays vectors) | — (replays vectors) | — |
 
@@ -612,11 +618,11 @@ python3 examples/demo.py       # three transactions against the card simulator
 # C (CMake ≥ 3.13, any C99 compiler)
 cd c
 cmake -S . -B build && cmake --build build
-ctest --test-dir build         # unit tests + 19 cross-language conformance vectors
+ctest --test-dir build         # unit tests + the cross-language conformance vectors
 
 # Rust (1.80+, no dependencies)
 cd rust
-cargo test                     # unit tests, 19 conformance vectors, fuzz (no panics), doc test
+cargo test                     # unit tests, conformance vectors, fuzz (no panics), doc test
 cargo run --example reader_template
 cargo build --no-default-features --target thumbv8m.main-none-eabihf   # no_std, bare metal
 ```
@@ -874,7 +880,7 @@ reference.
 
 ```mermaid
 flowchart LR
-    PY["Python reference<br/>+ card simulator"] -- "gen_vectors.py" --> V[("conformance/vectors<br/>19 scenarios:<br/>config · APDUs · outcome")]
+    PY["Python reference<br/>+ card simulator"] -- "gen_vectors.py" --> V[("conformance/vectors<br/>one file per scenario:<br/>config · APDUs · outcome")]
     V -- "replay, byte-exact" --> C["C: test_vectors"]
     V -- "replay, byte-exact" --> R["Rust: tests/conformance.rs"]
 ```
@@ -893,7 +899,7 @@ openpaykernel/
 │   ├── ARCHITECTURE.md               design decisions, data flow, testing strategy
 │   └── CLEAN_ROOM.md                 how the code was produced, contributor rules
 ├── conformance/
-│   └── vectors/*.txt                 19 APDU-transcript vectors shared by C and Rust (from Python)
+│   └── vectors/*.txt                 APDU-transcript vectors shared by C and Rust (generated from Python)
 │
 ├── python/                           ── Python reference implementation ──
 │   ├── pyproject.toml
@@ -909,7 +915,8 @@ openpaykernel/
 │   │   ├── outcome.py                Book A Outcome, status/CVM/message enums, error indication
 │   │   ├── emvproc.py                Session + shared steps: records, restrictions, CVM, TRM, TAA
 │   │   ├── entry_point.py            contactless Entry Point: pre-processing, PPSE, candidates
-│   │   ├── kernels/visa.py           Kernel 3: Visa qVSDC (Book C-3)
+│   │   ├── kernels/visa.py           Kernel 3: Visa qVSDC (Book C-3), the shared quick-flow engine
+│   │   ├── kernels/unionpay.py       Kernel 7: UnionPay qUICS (Book C-7), Visa engine + UnionPay profile
 │   │   ├── kernels/mastercard.py     Kernel 2: Mastercard EMV mode (Book C-2)
 │   │   ├── contact.py                contact kernel + ContactHost callbacks + AutoHost
 │   │   └── sim/
@@ -947,7 +954,8 @@ openpaykernel/
     │   │                             action analysis, GENERATE AC parsing
     │   ├── opk_entry_point.c         opk_contactless_process(): pre-processing, PPSE, kernel ID
     │   │                             resolution, candidate sort, final selection, kernel dispatch
-    │   ├── opk_visa.c                opk_kernel_visa(): GPO, records, CTQ/TTQ CVM, fDDA, outcome
+    │   ├── opk_visa.c                opk_kernel_visa(): quick flow for kernels 3 (Visa) and 7 (UnionPay):
+    │   │                             GPO, records, CTQ/TTQ CVM, fDDA, outcome
     │   ├── opk_mastercard.c          opk_kernel_mastercard(): GPO, records, CVM, limits, TAA,
     │   │                             GENERATE AC with CDA, outcome
     │   └── opk_contact.c             opk_contact_process(): PSE / list of AIDs, ODA, PIN
@@ -976,12 +984,13 @@ openpaykernel/
     │   ├── outcome.rs                Book A Outcome, Status/Cvm/Message/L1/L2 enums
     │   ├── emvproc.rs                Session + shared steps: records, restrictions, CVM, TRM, TAA, GENERATE AC
     │   ├── entry_point.rs            EntryPoint, ContactlessKernel trait, pre-processing, PPSE, candidates
-    │   ├── kernels/visa.rs           VisaKernel (Book C-3)
+    │   ├── kernels/visa.rs           VisaKernel (Book C-3) + start_quick_flow(), the shared engine
+    │   ├── kernels/unionpay.rs       UnionPayKernel (Book C-7)
     │   ├── kernels/mastercard.rs     MastercardKernel (Book C-2)
     │   └── contact.rs                ContactKernel<H: ContactHost>: selection, ODA, PIN, online, scripts
     ├── tests/
     │   ├── common/mod.rs             vector loader, replay reader + fuzzer, scripted host
-    │   ├── conformance.rs            19 shared vectors byte-exact + no-panic fuzz (OPK_FUZZ=<n>)
+    │   ├── conformance.rs            all shared vectors byte-exact + no-panic fuzz (OPK_FUZZ=<n>)
     │   └── core.rs                   TLV, DOL, SHA-1, RSA, CAPK, PIN block, Level-1 error tests
     └── examples/reader_template.rs   minimal hardware adapter template with APDU tracing
 ```
@@ -991,7 +1000,9 @@ openpaykernel/
 - Kernel 2: mag-stripe mode, Data Exchange (DEK/DET), torn-transaction recovery, relay
   resistance, IDS/data storage
 - Kernel 3: Issuer Update Processing
-- Kernels 4 (Amex), 5 (JCB), 6 (Discover), 7 (UnionPay), RuPay, Mir, and the new C-8 kernel
+- Kernels 6 (Discover), 4 (American Express) and 5 (JCB), in progress; then the new EMVCo C-8 kernel
+- RuPay and Mir: only possible with access to their licensed specifications (not public)
+- UnionPay: full UICS fallback flow, SM2/SM3 ODA
 - ECC ODA (Book E) and SM2/SM3
 - Terminal CLI with persistent configuration (PC/SC adapters already in `examples/`)
 - Issuer-side cryptogram (ARQC) verification for host simulators

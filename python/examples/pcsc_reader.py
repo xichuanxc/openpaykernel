@@ -24,7 +24,8 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from openpaykernel import (CAPK, AidConfig, CAPKStore, ContactKernel, EntryPoint, Environment,  # noqa: E402
-                           MastercardKernel, OnlineResponse, TerminalConfig, Transaction, VisaKernel)
+                           MastercardKernel, OnlineResponse, TerminalConfig, Transaction, UnionPayKernel,
+                           VisaKernel)
 from openpaykernel.apdu import TransmissionError  # noqa: E402
 from openpaykernel.tags import name  # noqa: E402
 
@@ -59,6 +60,7 @@ class PcscReader:
 # --------------------------------------------------------------------------- configuration
 VISA = bytes.fromhex("A0000000031010")
 MASTERCARD = bytes.fromhex("A0000000041010")
+UNIONPAY = bytes.fromhex("A0000003330101")  # partial match: 010101 debit, 010102 credit, 010103 quasi-credit
 
 
 def build_environment(capk_file: str | None) -> Environment:
@@ -73,6 +75,9 @@ def build_environment(capk_file: str | None) -> Environment:
         AidConfig(VISA, kernel_id=3, floor_limit=10000, cl_transaction_limit=50000, cvm_required_limit=3000,
                   tac_default=bytes.fromhex("DC4000A800"), tac_denial=bytes.fromhex("0010000000"),
                   tac_online=bytes.fromhex("DC4004F800")),
+        AidConfig(UNIONPAY, kernel_id=7, floor_limit=10000, cl_transaction_limit=50000, cvm_required_limit=3000,
+                  tac_default=bytes.fromhex("D84000A800"), tac_denial=bytes.fromhex("0010000000"),
+                  tac_online=bytes.fromhex("D84004F800")),
         AidConfig(MASTERCARD, kernel_id=2, floor_limit=10000, extra=mc_kernel_config,
                   tac_default=bytes.fromhex("FC50A8A000"), tac_denial=bytes.fromhex("0000000000"),
                   tac_online=bytes.fromhex("FC50A8F800")),
@@ -143,7 +148,7 @@ def main() -> None:
         result = ContactKernel(env, ConsoleHost()).process(reader, txn, log)
         outcome, data = result.outcome, result.data
     else:
-        outcome = EntryPoint(env, [VisaKernel(), MastercardKernel()]).process(reader, txn, log)
+        outcome = EntryPoint(env, [VisaKernel(), MastercardKernel(), UnionPayKernel()]).process(reader, txn, log)
         data = outcome.data_record
 
     print("\nAPDU trace:")

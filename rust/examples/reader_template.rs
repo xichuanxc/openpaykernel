@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 use openpaykernel::apdu::{Reader, TransmissionError};
 use openpaykernel::{
     AidConfig, AppCandidate, CapkStore, ContactHost, ContactKernel, EntryPoint, Environment, MastercardKernel,
-    OnlineResponse, TerminalConfig, Transaction, VisaKernel,
+    OnlineResponse, TerminalConfig, Transaction, UnionPayKernel, VisaKernel,
 };
 
 // ---------------------------------------------------------------- your hardware goes here
@@ -87,6 +87,11 @@ fn environment() -> Environment {
     let mut mc = AidConfig::new(&[0xA0, 0x00, 0x00, 0x00, 0x04, 0x10, 0x10]);
     mc.kernel_id = 2;
     mc.floor_limit = 10000;
+    let mut upi = AidConfig::new(&[0xA0, 0x00, 0x00, 0x03, 0x33, 0x01, 0x01]); // partial match: 0101xx
+    upi.kernel_id = 7;
+    upi.floor_limit = 10000;
+    upi.cl_transaction_limit = Some(50000);
+    upi.cvm_required_limit = Some(3000);
     // Use a secure RNG on a real terminal; this template uses the clock for simplicity.
     let mut seed =
         std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(1, |d| d.as_nanos() as u64);
@@ -98,7 +103,7 @@ fn environment() -> Environment {
             *b = seed as u8;
         }
     });
-    Environment::new(TerminalConfig::default(), vec![visa, mc], CapkStore::new(), rng)
+    Environment::new(TerminalConfig::default(), vec![visa, mc, upi], CapkStore::new(), rng)
 }
 
 fn main() {
@@ -110,7 +115,10 @@ fn main() {
         let r = ContactKernel::new(environment(), ConsoleHost).process(&mut reader, &txn, None);
         (r.outcome, r.data)
     } else {
-        let mut ep = EntryPoint::new(environment(), vec![Box::new(VisaKernel), Box::new(MastercardKernel)]);
+        let mut ep = EntryPoint::new(
+            environment(),
+            vec![Box::new(VisaKernel), Box::new(MastercardKernel), Box::new(UnionPayKernel)],
+        );
         let o = ep.process(&mut reader, &txn, None);
         let d = o.data_record.clone();
         (o, d)

@@ -10,6 +10,9 @@ use crate::tlv;
 
 pub const PPSE: &[u8] = b"2PAY.SYS.DDF01";
 
+/// Kernels whose PDOL carries the Terminal Transaction Qualifiers (9F66) built at pre-processing.
+pub const TTQ_KERNELS: &[u32] = &[3, 6, 7];
+
 pub fn default_kernel_id(aid: &[u8]) -> u32 {
     match aid.get(..5) {
         Some([0xA0, 0x00, 0x00, 0x00, 0x04]) => 2,
@@ -124,7 +127,7 @@ impl EntryPoint {
                     p.cvm_required_limit_exceeded = true;
                 }
             }
-            if kid == 3 {
+            if TTQ_KERNELS.contains(&kid) {
                 let mut ttq = cfg.ttq;
                 ttq[1] &= 0x3F;
                 if p.status_check || p.zero_amount || p.floor_limit_exceeded {

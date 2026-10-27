@@ -68,13 +68,28 @@ impl ContactlessKernel for VisaKernel {
     }
 
     fn start(&self, ctx: &mut KernelContext<'_, '_>) -> Result<Outcome, TransmissionError> {
-        let mut s = Session::new(ctx.env, ctx.aid, ctx.txn, ctx.chan);
-        match run(ctx.fci, &ctx.candidate.adf_name, ctx.pre.ttq.unwrap_or(ctx.aid.ttq), &mut s) {
-            Ok(o) => Ok(o),
-            Err(KernelError::Transmission) => Err(TransmissionError),
-            Err(KernelError::Card(sw)) => Ok(Outcome::end_application(L2Error::CardDataError, sw, None)),
-            Err(KernelError::Parse) => Ok(Outcome::end_application(L2Error::ParsingError, 0, None)),
+        start_quick_flow(ctx, &[])
+    }
+}
+
+/// The qVSDC quick flow, shared with UnionPay qUICS (kernel 7). `extra_record_tags` are added
+/// to the data record of a decided transaction (the scheme profile).
+pub(crate) fn start_quick_flow(
+    ctx: &mut KernelContext<'_, '_>,
+    extra_record_tags: &[u32],
+) -> Result<Outcome, TransmissionError> {
+    let mut s = Session::new(ctx.env, ctx.aid, ctx.txn, ctx.chan);
+    let result = run(ctx.fci, &ctx.candidate.adf_name, ctx.pre.ttq.unwrap_or(ctx.aid.ttq), &mut s);
+    match result {
+        Ok(mut o) => {
+            if !o.data_record.is_empty() {
+                o.data_record.extend(s.db.subset(extra_record_tags));
+            }
+            Ok(o)
         }
+        Err(KernelError::Transmission) => Err(TransmissionError),
+        Err(KernelError::Card(sw)) => Ok(Outcome::end_application(L2Error::CardDataError, sw, None)),
+        Err(KernelError::Parse) => Ok(Outcome::end_application(L2Error::ParsingError, 0, None)),
     }
 }
 
