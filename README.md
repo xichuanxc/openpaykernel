@@ -290,6 +290,65 @@ opk_contact_process()                             opk_contact.c
 Every card command goes through `opk_exchange()` → `opk_xchg()` → `reader.transmit()`. This
 path handles `61xx` (GET RESPONSE) and `6Cxx` (wrong Le) the same way for all kernels.
 
+### Rust call trees
+
+The Rust crate follows the same steps. Kernel steps return `KResult<T>`
+(`Result<T, KernelError>`), and each kernel turns a `KernelError` into an outcome at its
+boundary: `Card(sw)` → END APPLICATION, `Parse` → END APPLICATION (parsing error),
+`Transmission` → TRY AGAIN (contactless) or END APPLICATION with `l1 = Transmission` (contact).
+
+**Contactless** (`entry_point.rs`, `kernels/*.rs`)
+
+```text
+EntryPoint::process(&mut reader, &txn, log)
+├── preprocess()                                  limits, zero amount, TTQ per AID/kernel
+├── Channel::new(reader)                          61xx / 6Cxx handling, APDU log
+└── select_and_run()
+    ├── build_candidates()                        [APDU] SELECT 2PAY.SYS.DDF01 → sorted Vec<Candidate>
+    └── for each candidate:
+        ├── Channel::exchange(select(AID))        [APDU] SELECT AID
+        └── ContactlessKernel::start(&mut KernelContext)
+            ├── VisaKernel → visa::run()
+            │   ├── Session::new()                terminal + transaction tags, 9F37 from the RNG
+            │   ├── TlvDb::store_card_data(FCI), Session::build_dol(PDOL)
+            │   ├── [APDU] GET PROCESSING OPTIONS → parse_gpo_response()
+            │   ├── read_application_data()       [APDU] READ RECORD × n
+            │   ├── check_mandatory(), track2_matches_pan(), cvm()
+            │   └── TC: yymmdd_bcd() expiry, exception file, fdda()
+            │       └── retrieve_icc_pk() → oda::recover_issuer_pk() / recover_icc_pk()
+            │           → oda::verify_dynamic_signature() → crypto::rsa_public(), sha1()
+            └── MastercardKernel → mastercard::run()
+                ├── Session::new(), GPO, read_application_data(), check_mandatory()
+                ├── CDA selection (AIP + DF811F + CapkStore::find)
+                ├── processing_restrictions(), cvm_list_processing() or on-device CVM
+                ├── reader limits, floor limit, terminal_action_analysis()
+                ├── [APDU] GENERATE AC (+CDA) → parse_generate_ac()
+                └── retrieve_icc_pk() → oda::verify_cda()
+```
+
+**Contact** (`contact.rs`)
+
+```text
+ContactKernel::<H: ContactHost>::process(&mut reader, &txn, log)
+└── contact::run()
+    ├── build_candidate_list() → pse()            [APDU] SELECT 1PAY.SYS.DDF01, READ RECORD
+    │                          └ list_of_aids()   [APDU] SELECT AID (first / next)
+    ├── {ContactHost::choose_application}         several apps or confirmation needed
+    ├── [APDU] SELECT AID → Session::new()
+    └── process_app()
+        ├── store_card_data(FCI), [APDU] GPO, parse_gpo_response(), read_application_data()
+        ├── do_oda()                              CDA check · dda() [APDU] INTERNAL AUTHENTICATE · SDA
+        ├── processing_restrictions()
+        ├── cvm_list_processing(&mut |s, m| perform_pin(s, host, m))
+        │   └── perform_pin()                     [APDU] GET DATA 9F17 → {ContactHost::enter_pin} →
+        │                                         [APDU] VERIFY, or enciphered_verify() GET CHALLENGE + RSA
+        ├── terminal_risk_management()            [APDU] GET DATA 9F36 / 9F13
+        ├── terminal_action_analysis()
+        ├── generate_ac(CDOL1)                    [APDU] GENERATE AC #1 (+ verify_cda)
+        └── ARQC: {ContactHost::go_online} → [APDU] EXTERNAL AUTHENTICATE → run_scripts(0x71)
+                  → generate_ac(CDOL2) [APDU] GENERATE AC #2 → run_scripts(0x72) → finish()
+```
+
 ### Python ↔ C ↔ Rust name map
 
 | C (`c/src/`) | Python (`python/openpaykernel/`) | Rust (`rust/src/`) |
@@ -588,6 +647,31 @@ let outcome = ep.process(&mut my_reader, &Transaction::new(1250), None);   // my
 println!("{:?} {:?}", outcome.status, outcome.cvm);
 ```
 
+### Rust: contact
+
+```rust
+use std::collections::BTreeMap;
+use openpaykernel::{AppCandidate, ContactHost, ContactKernel, OnlineResponse, Transaction};
+
+struct MyHost;
+
+impl ContactHost for MyHost {
+    fn choose_application(&mut self, candidates: &[AppCandidate]) -> Option<usize> {
+        Some(0)                                          // or ask the cardholder
+    }
+    fn enter_pin(&mut self, online: bool, tries_left: Option<u8>) -> Option<String> {
+        read_pin_from_pin_pad()                          // None = bypass
+    }
+    fn go_online(&mut self, field55: &BTreeMap<u32, Vec<u8>>) -> Option<OnlineResponse> {
+        send_to_host(field55)                            // None = unable to go online
+    }
+}
+
+let mut kernel = ContactKernel::new(env, MyHost);
+let result = kernel.process(&mut my_reader, &Transaction::new(2000), None);
+println!("{:?} {:?} {:02X?}", result.outcome.status, result.outcome.cvm, result.data.get(&0x9F26));
+```
+
 ### C: contact
 
 ```c
@@ -603,6 +687,56 @@ opk_contact_host host = { choose_app, enter_pin, go_online, my_ctx };
 opk_outcome out;  static opk_db db;
 opk_contact_process(&env, &txn, &reader, &host, &out, &db);
 ```
+
+### Using the Rust crate
+
+Add it as a Git dependency (the repository is private, so Cargo needs Git credentials for it):
+
+```toml
+[dependencies]
+openpaykernel = { git = "https://github.com/xichuanxc/openpaykernel" }                            # with std
+# openpaykernel = { git = "https://github.com/xichuanxc/openpaykernel", default-features = false } # no_std
+```
+
+| Feature | Default | Effect |
+|---|---|---|
+| `std` | on | Builds against `std`. Turn it off for bare metal: the crate then uses only `core` + `alloc` |
+
+**Bare-metal (`no_std`) use:** the crate allocates (`Vec`, `BTreeMap`, `Box`), so the firmware
+must provide a `#[global_allocator]` (for example the `embedded-alloc` crate). A contactless
+transaction needs a few KB of heap; RSA uses at most 2048-bit keys. CI builds the crate for
+`thumbv8m.main-none-eabihf`, `thumbv6m-none-eabi` and `riscv32imac-unknown-none-elf`.
+
+```rust
+#![no_std]
+extern crate alloc;
+use alloc::{boxed::Box, vec};
+use openpaykernel::{AidConfig, CapkStore, Environment, EntryPoint, TerminalConfig, Transaction, VisaKernel};
+
+// a #[global_allocator] is defined elsewhere in the firmware
+fn pay(reader: &mut impl openpaykernel::apdu::Reader, trng: impl FnMut(&mut [u8]) + 'static) -> openpaykernel::Status {
+    let mut visa = AidConfig::new(&[0xA0, 0x00, 0x00, 0x00, 0x03, 0x10, 0x10]);
+    visa.kernel_id = 3;
+    let env = Environment::new(TerminalConfig::default(), vec![visa], CapkStore::new(), Box::new(trng));
+    let mut ep = EntryPoint::new(env, vec![Box::new(VisaKernel)]);
+    ep.process(reader, &Transaction::new(100), None).status
+}
+```
+
+**Public API at a glance**
+
+| Item | Purpose |
+|---|---|
+| `Environment::new(terminal, aids, capks, rng)` | Configuration + the terminal RNG (`Box<dyn FnMut(&mut [u8])>`) |
+| `EntryPoint::new(env, kernels).process(reader, &txn, log)` → `Outcome` | Contactless transaction |
+| `ContactKernel::new(env, host).process(reader, &txn, log)` → `ContactResult` | Contact transaction |
+| `apdu::Reader` (trait, also implemented for closures) | Your hardware |
+| `ContactHost` (trait) | Application choice, PIN entry, online authorisation |
+| `ContactlessKernel` (trait) | Plug in further kernels (Amex, JCB, ...) |
+| `Outcome { status, cvm, error, data_record, .. }` | Book A outcome, plus the tags for the authorisation message |
+| `Capk`, `CapkStore`, `tlv`, `dol`, `oda`, `crypto` | Building blocks, usable on their own |
+
+Generate the API docs locally with `cargo doc --open` in `rust/`.
 
 ## Connect your own reader hardware
 
@@ -723,7 +857,7 @@ the `pcsc` crate's `card.transmit()` the same way.
   and every transaction increments its real ATC.
 - **Nothing goes to a bank.** "ONLINE REQUEST" means the kernel *would* ask for authorisation.
   The examples only simulate the issuer's answer, and no money moves.
-- **Load CA public keys** (`--capk-file`, or `opk_env_add_capk()`) for offline data
+- **Load CA public keys** (`--capk-file`, `opk_env_add_capk()`, or `CapkStore::add()` in Rust) for offline data
   authentication. Without them ODA fails, which is the correct behaviour.
 - The example PIN entry reads from the keyboard **in clear**. Real terminals must use a
   certified PIN pad (PCI PTS); see the [Disclaimer](#disclaimer).
@@ -861,6 +995,7 @@ openpaykernel/
 - ECC ODA (Book E) and SM2/SM3
 - Terminal CLI with persistent configuration (PC/SC adapters already in `examples/`)
 - Issuer-side cryptogram (ARQC) verification for host simulators
+- Rust: allocation-free (`heapless`) variant, a PC/SC example using the `pcsc` crate, publishing to crates.io once public
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and
 [docs/CLEAN_ROOM.md](docs/CLEAN_ROOM.md) for how this code was produced.
