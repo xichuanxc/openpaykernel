@@ -17,6 +17,127 @@ kernel. It comes as two implementations that behave the same way:
 > before it can process real payments. Use OpenPayKernel to learn, build test tools and simulators,
 > and as a starting point for a certification project.
 
+## Kernel structure
+
+### Layers
+
+The host application talks to the kernel through only three things: configuration, an
+APDU `transmit` function and (for contact) a few callbacks. Everything below that is
+layered so that both interfaces share the same EMV processing and cryptography.
+
+```mermaid
+flowchart TB
+    host["<b>Host application</b><br/>terminal / AID / CAPK config · transaction<br/>reader.transmit(APDU) · contact callbacks"]
+
+    subgraph CL["Contactless"]
+        ep["<b>Entry Point</b> · Book B<br/>pre-processing · PPSE · candidate list · final selection"]
+        k2["<b>Kernel 2</b> · Book C-2<br/>Mastercard, EMV mode"]
+        k3["<b>Kernel 3</b> · Book C-3<br/>Visa qVSDC"]
+    end
+
+    subgraph CT["Contact"]
+        ck["<b>Contact kernel</b> · Books 1-4<br/>PSE / list of AIDs · PIN · online · scripts · 2nd GENERATE AC"]
+    end
+
+    proc["<b>EMV processing</b> · emvproc<br/>session · READ RECORD · processing restrictions · CVM list<br/>terminal risk management · terminal action analysis · GENERATE AC"]
+    oda["<b>Offline data authentication</b> · oda<br/>CAPK → issuer PK → ICC PK · SDA · DDA · fDDA · CDA"]
+    core["<b>Core</b><br/>BER-TLV · TLV database · DOL · APDU · data dictionary · SHA-1 · RSA"]
+    out["<b>Outcome</b> · Book A<br/>status · CVM · UI request · error indication · data record"]
+
+    host --> ep
+    host --> ck
+    ep -- "kernel ID" --> k2
+    ep -- "kernel ID" --> k3
+    k2 --> proc
+    k3 --> proc
+    ck --> proc
+    proc --> oda
+    oda --> core
+    proc --> core
+    k2 -.-> out
+    k3 -.-> out
+    ck -.-> out
+    out -.-> host
+```
+
+### Contactless transaction flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant H as Host
+    participant EP as Entry Point
+    participant K as Kernel 2 / 3
+    participant C as Card
+
+    H->>EP: process(reader, transaction)
+    Note over EP: Start A: pre-processing per AID/kernel<br/>(zero amount, CL limit, floor limit, CVM limit, TTQ)
+    EP->>C: SELECT 2PAY.SYS.DDF01
+    C-->>EP: FCI with directory entries (61: 4F, 87, 9F2A)
+    Note over EP: Start C: build and sort the candidate list
+    EP->>C: SELECT AID (final selection)
+    C-->>EP: FCI (PDOL, label, ...)
+    EP->>K: start(context)
+    K->>C: GET PROCESSING OPTIONS (PDOL data)
+    C-->>K: AIP, AFL (Visa: plus cryptogram)
+    K->>C: READ RECORD × n
+    C-->>K: records (PAN, expiry, CDOL1, certificates, ...)
+    Note over K: ODA · processing restrictions · CVM · limits · TAA
+    K->>C: GENERATE AC (Mastercard only, CDA requested)
+    C-->>K: CID, ATC, signed dynamic data
+    K-->>EP: Outcome (or SELECT NEXT → next candidate)
+    EP-->>H: APPROVED / DECLINED / ONLINE REQUEST / TRY ANOTHER INTERFACE / ...
+```
+
+### Contact transaction flow
+
+```mermaid
+flowchart LR
+    A["Application<br/>selection"] --> B["Initiate app<br/>processing<br/>(GPO)"]
+    B --> C["Read<br/>application<br/>data"]
+    C --> D["Offline data<br/>authentication<br/>SDA / DDA / CDA"]
+    D --> E["Processing<br/>restrictions"]
+    E --> F["Cardholder<br/>verification<br/>(PIN callback)"]
+    F --> G["Terminal risk<br/>management"]
+    G --> H["Terminal<br/>action<br/>analysis"]
+    H --> I["1st GENERATE AC"]
+    I -->|TC / AAC| Z["Outcome"]
+    I -->|ARQC| J["Online<br/>(go_online callback)<br/>issuer auth · scripts 71"]
+    J --> K["2nd GENERATE AC<br/>scripts 72"]
+    K --> Z
+```
+
+### Module map (Python ↔ C)
+
+Each Python module has a matching C file, and the shared conformance vectors keep them behaving the same.
+
+| Layer | Python `python/openpaykernel/` | C `c/src/` | Specification |
+|---|---|---|---|
+| Public API | `__init__.py` | `include/openpaykernel/openpaykernel.h` | — |
+| TLV, TLV database, DOL, data dictionary | `tlv.py`, `dol.py`, `tags.py` | `opk_tlv.c` | Book 3 Annex A/B, §5.4 |
+| APDU commands | `apdu.py` | `opk_emvproc.c` | Book 3 §6 |
+| SHA-1, RSA | `hashlib`, `pow()` | `opk_crypto.c` | Book 2 Annex B |
+| CAPK store, ODA | `capk.py`, `oda.py` | `opk_oda.c` | Book 2 §5–6 |
+| Shared EMV processing | `emvproc.py` | `opk_emvproc.c` | Book 3 §10, Book 4 §6 |
+| Configuration | `config.py` | `opk_env`, `opk_*_config` | — |
+| Outcome | `outcome.py` | `opk_outcome` | Book A §6 |
+| Entry Point | `entry_point.py` | `opk_entry_point.c` | Book B |
+| Kernel 2 (Mastercard) | `kernels/mastercard.py` | `opk_mastercard.c` | Book C-2 |
+| Kernel 3 (Visa) | `kernels/visa.py` | `opk_visa.c` | Book C-3 |
+| Contact kernel | `contact.py` | `opk_contact.c` | Books 1–4 |
+| Card simulator | `sim/card.py`, `sim/rsa.py` | — (replays vectors) | — |
+
+### Design principles
+
+- **No hardware coupling.** All card I/O goes through `transmit(C-APDU) → R-APDU`, so the
+  same kernel runs on PC/SC, an NFC controller, the simulator or a recorded transcript.
+- **One result type.** Contact and contactless kernels both return the Book A Outcome.
+- **Card data can't overwrite terminal data.** Terminal-sourced tags are protected in the
+  transaction's TLV database.
+- **Deterministic.** Unpredictable numbers come from an injected RNG, which is what makes
+  byte-exact cross-language testing possible.
+- **Embedded-friendly C.** C99, no `malloc`, no global mutable state, no dependencies.
+
 ## Quick start
 
 ```bash
@@ -74,16 +195,26 @@ C under AddressSanitizer and UBSan, `OPK_FUZZ=<n> ./build/test_vectors tests/vec
 ## Repository layout
 
 ```
-python/openpaykernel/        tlv, dol, apdu, tags, capk, oda, config, outcome
-                      emvproc.py      shared Book 3/4 steps (restrictions, CVM, TRM, TAA, ...)
-                      entry_point.py  Book B
-                      kernels/        visa.py (C-3), mastercard.py (C-2)
-                      contact.py      contact kernel
-                      sim/            card simulator, RSA + EMV certificate builder
-c/include/openpaykernel/     public API (openpaykernel.h)
-c/src/                C implementation (same module split)
-c/tests/              unit tests, vector replay + fuzzer, vectors/
-docs/                 ARCHITECTURE.md, CLEAN_ROOM.md
+openpaykernel/
+├── python/
+│   ├── openpaykernel/
+│   │   ├── tlv.py dol.py tags.py apdu.py      core encoding + commands
+│   │   ├── capk.py oda.py                     keys + offline data authentication
+│   │   ├── config.py outcome.py               configuration + Book A outcome
+│   │   ├── emvproc.py                         shared Book 3/4 processing steps
+│   │   ├── entry_point.py                     contactless Entry Point (Book B)
+│   │   ├── kernels/visa.py                    Kernel 3 (Book C-3)
+│   │   ├── kernels/mastercard.py              Kernel 2 (Book C-2)
+│   │   ├── contact.py                         contact kernel (Books 1-4)
+│   │   └── sim/                               card simulator, RSA + certificate builder
+│   ├── tests/                                 unit, end-to-end, robustness, vector generator
+│   └── examples/demo.py
+├── c/
+│   ├── include/openpaykernel/openpaykernel.h  public API
+│   ├── src/opk_*.c                            C implementation (same module split)
+│   └── tests/                                 unit tests, vector replay + fuzzer, vectors/
+├── docs/                                      ARCHITECTURE.md, CLEAN_ROOM.md
+└── .github/workflows/ci.yml                   Python + C + sanitizer CI
 ```
 
 ## Roadmap
