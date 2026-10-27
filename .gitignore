@@ -1,0 +1,15 @@
+# --- Proprietary inputs and reverse-engineering material: NEVER commit -------------
+# The open-source code is a clean-room implementation of the public EMVCo specs.
+# Vendor binaries, decompiler output, and DWARF dumps must stay out of the repository.
+*.rar
+extracted/
+re/
+
+# --- build / tooling ---------------------------------------------------------------
+c/build*/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+dist/
+.DS_Store

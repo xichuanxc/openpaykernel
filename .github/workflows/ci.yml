@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install pytest pyflakes
+      - name: Lint
+        working-directory: python
+        run: python -m pyflakes openpaykernel tests examples
+      - name: Tests
+        working-directory: python
+        run: python -m pytest -q
+      - name: Conformance vectors are up to date
+        working-directory: python
+        run: |
+          PYTHONPATH=. python tests/gen_vectors.py
+          git diff --exit-code -- ../c/tests/vectors
+
+  c:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        cc: [gcc, clang]
+        exclude:
+          - os: macos-latest
+            cc: gcc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        working-directory: c
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          cmake -S . -B build -DCMAKE_C_FLAGS="-Werror"
+          cmake --build build
+      - name: Test
+        working-directory: c
+        run: ctest --test-dir build --output-on-failure
+
+  c-sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build with ASan + UBSan
+        working-directory: c
+        env:
+          CC: clang
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+          cmake --build build
+      - name: Conformance vectors
+        working-directory: c
+        run: ./build/test_vectors tests/vectors/*.txt
+      - name: Fuzz corrupted card responses
+        working-directory: c
+        env:
+          UBSAN_OPTIONS: halt_on_error=1
+          OPK_FUZZ: "3000"
+        run: ./build/test_vectors tests/vectors/*.txt
