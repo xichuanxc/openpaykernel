@@ -171,7 +171,8 @@ int opk_db_set(opk_db *db, uint32_t tag, const uint8_t *val, size_t len)
 {
     opk_db_entry *e = db_find(db, tag);
     if (e && len <= e->len) {
-        memmove(db->pool + e->off, val, len);
+        if (len)
+            memmove(db->pool + e->off, val, len);
         e->len = (uint16_t)len;
         return OPK_OK;
     }
@@ -183,7 +184,8 @@ int opk_db_set(opk_db *db, uint32_t tag, const uint8_t *val, size_t len)
         e = &db->e[db->count++];
         e->tag = tag;
     }
-    memmove(db->pool + db->used, val, len);
+    if (len)
+        memmove(db->pool + db->used, val, len);
     e->off = db->used;
     e->len = (uint16_t)len;
     db->used = (uint16_t)(db->used + len);

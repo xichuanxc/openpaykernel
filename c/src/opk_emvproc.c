@@ -370,7 +370,8 @@ int opk_read_application_data(opk_session *s)
         afl_len = 0;
     if (afl_len % 4 || afl_len > sizeof afl_copy)
         return OPK_ERR_CARD;
-    memcpy(afl_copy, afl, afl_len);
+    if (afl_len)
+        memcpy(afl_copy, afl, afl_len); /* memcpy(_, NULL, 0) is undefined behaviour */
     /* validate the whole AFL first, like the Python reference */
     for (size_t i = 0; i < afl_len; i += 4) {
         uint8_t sfi = afl_copy[i] >> 3, first = afl_copy[i + 1], last = afl_copy[i + 2], noda = afl_copy[i + 3];
