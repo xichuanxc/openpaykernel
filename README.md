@@ -13,9 +13,13 @@ kernel. It comes as two implementations that behave the same way:
 | ODA: SDA / DDA / fDDA / CDA (RSA, SHA-1) | ✅ | ✅ |
 | Card simulator + key/certificate generator | ✅ | n/a (uses the generated vectors) |
 
-> **Not certified.** A kernel needs EMVCo Level 2 type approval, and payment-brand approval,
-> before it can process real payments. Use OpenPayKernel to learn, build test tools and simulators,
-> and as a starting point for a certification project.
+> [!CAUTION]
+> **For study and research only. Do not use it to move real money.**
+> OpenPayKernel is an educational project. It is **not certified** by EMVCo or any payment
+> brand, has **not** been security-audited, and is **not guaranteed to be bug-free**. Payment
+> software handles people's money: a defect can approve a transaction that should be
+> declined, leak cardholder data, or block a card. It is provided "AS IS", without warranty
+> of any kind. Read the full [Disclaimer](#disclaimer) before you use it.
 
 ## Kernel structure
 
@@ -311,6 +315,7 @@ Neither implementation needs a third-party library at run time.
 | **Crypto** | Built in: `hashlib.sha1` and `pow()` for RSA | Built in: own SHA-1 and Montgomery RSA (`opk_crypto.c`). No OpenSSL/mbedTLS |
 | **Build** | None (pure Python); `setuptools ≥ 68` to package | CMake ≥ 3.13 and any C99 compiler (gcc, clang, MSVC-compatible) |
 | **Test / dev** | `pytest ≥ 7`; `pyflakes` (lint, CI); `random` (simulator only) | `<stdio.h>`, `<stdlib.h>` in the test programs only; ASan/UBSan (optional, CI) |
+| **Examples (optional)** | `pyscard` for `examples/pcsc_reader.py` | PC/SC (`PCSC.framework` / `libpcsclite` / `winscard`) for `examples/pcsc_terminal.c`; `stdio`, `stdlib`, `time` |
 | **CI** | GitHub Actions: Python 3.10–3.13 | GitHub Actions: Ubuntu gcc/clang, macOS clang, clang ASan+UBSan |
 
 ### What the host application provides
@@ -466,7 +471,7 @@ flowchart BT
 ```bash
 # Python (3.10+, no runtime dependencies)
 cd python
-python3 -m pytest              # 38 tests: unit, end-to-end, robustness
+python3 -m pytest              # 42 tests: unit, end-to-end, robustness, hardware adapter
 python3 examples/demo.py       # three transactions against the card simulator
 
 # C (CMake ≥ 3.13, any C99 compiler)
@@ -503,6 +508,111 @@ opk_contact_host host = { choose_app, enter_pin, go_online, my_ctx };
 opk_outcome out;  static opk_db db;
 opk_contact_process(&env, &txn, &reader, &host, &out, &db);
 ```
+
+## Connect your own reader hardware
+
+The kernel never talks to hardware directly. To test with a real reader, you implement
+**one function** that sends a command APDU and returns the response. Everything else (application
+selection, TLV parsing, GET RESPONSE handling, cryptography, the transaction flow) is
+already in the package.
+
+```mermaid
+flowchart LR
+    K["OpenPayKernel<br/>Entry Point · kernels · contact"] -- "C-APDU bytes" --> T["<b>your transmit()</b><br/>the only code you write"]
+    T -- "R-APDU: data + SW1 SW2" --> K
+    T <--> HW["your hardware<br/>PC/SC · vendor SDK · serial/USB · NFC controller"]
+    HW <--> C["card<br/>(test card)"]
+```
+
+### The contract
+
+| | Python | C |
+|---|---|---|
+| Signature | `transmit(capdu: bytes) -> bytes` | `int transmit(void *ctx, const uint8_t *capdu, size_t clen, uint8_t *rapdu, size_t *rlen)` |
+| Input | Complete command APDU: `CLA INS P1 P2 [Lc data] [Le]` | Same; `*rlen` holds the size of `rapdu` |
+| Output | Response data followed by `SW1 SW2` (at least 2 bytes) | Same in `rapdu`, length in `*rlen`; return `0` |
+| Level-1 error (no card, card removed, timeout) | raise `openpaykernel.apdu.TransmissionError` | return a negative value |
+| Handled by the kernel, **not** by you | `61xx` GET RESPONSE, `6Cxx` wrong Le, all parsing | same |
+| Done by the reader **before** calling the kernel | card power-up (contact) or polling + anticollision + activation (contactless, ISO 14443) | same |
+
+A Level-1 error becomes an outcome: contactless gives **TRY AGAIN** (present the card again),
+contact gives **END APPLICATION** with `l1 = TRANSMISSION`.
+
+### Python: minimal adapter
+
+```python
+from openpaykernel import EntryPoint, Transaction, VisaKernel, MastercardKernel
+from openpaykernel.apdu import TransmissionError
+
+class MyReader:
+    """Wrap your device. This is the only hardware-specific code."""
+    def __init__(self, device):
+        self.device = device                       # vendor SDK handle, serial port, ...
+
+    def transmit(self, capdu: bytes) -> bytes:
+        try:
+            return self.device.exchange(capdu)     # must return data + SW1 SW2
+        except IOError as e:                       # card removed, timeout, ...
+            raise TransmissionError(str(e)) from e
+
+log = []                                           # optional: collects every (C-APDU, R-APDU)
+outcome = EntryPoint(env, [VisaKernel(), MastercardKernel()]).process(MyReader(dev), Transaction(amount=100), log)
+```
+
+Ready-made PC/SC version: [`python/examples/pcsc_reader.py`](python/examples/pcsc_reader.py).
+It works with USB contact and contactless readers (ACS ACR122U/ACR39U, Identiv, HID Omnikey, ...).
+
+```bash
+pip install pyscard
+cd python
+python3 examples/pcsc_reader.py --amount 1.00              # contactless
+python3 examples/pcsc_reader.py --contact --amount 1.00    # contact chip (asks for PIN / issuer decision)
+python3 examples/pcsc_reader.py --capk-file capks.txt      # add CA public keys for ODA
+```
+
+### C: minimal adapter
+
+```c
+static int my_transmit(void *ctx, const uint8_t *capdu, size_t clen, uint8_t *rapdu, size_t *rlen)
+{
+    my_device *dev = ctx;
+    size_t n = *rlen;
+    if (vendor_sdk_exchange(dev->handle, capdu, clen, rapdu, &n) != 0 || n < 2)
+        return -1;                                 /* Level-1 error */
+    *rlen = n;
+    return 0;
+}
+
+opk_reader reader = { my_transmit, &my_dev };
+opk_contactless_process(&env, &txn, &reader, &out, &db);
+```
+
+- [`c/examples/reader_template.c`](c/examples/reader_template.c): the template above as a
+  complete program. Replace `vendor_sdk_exchange()` and run `./build/opk_reader_template [contact]`.
+- [`c/examples/pcsc_terminal.c`](c/examples/pcsc_terminal.c): a working PC/SC terminal
+  (macOS PCSC.framework, Linux pcsc-lite, Windows winscard):
+
+```bash
+cd c
+cmake -S . -B build -DOPK_BUILD_PCSC_EXAMPLE=ON && cmake --build build
+./build/opk_pcsc_terminal 100              # contactless, 1.00
+./build/opk_pcsc_terminal contact 2500     # contact, 25.00
+```
+
+Both examples print the full APDU trace and the outcome. The tracing wrapper is in
+[`c/examples/example_common.h`](c/examples/example_common.h).
+
+### Before you test on hardware
+
+- **Use EMV test cards** (from a payment brand, an acquirer, or a test-tool vendor). On a live
+  bank card, offline PIN attempts decrement the real PIN try counter (and can block the card),
+  and every transaction increments its real ATC.
+- **Nothing goes to a bank.** "ONLINE REQUEST" means the kernel *would* ask for authorisation.
+  The examples only simulate the issuer's answer, and no money moves.
+- **Load CA public keys** (`--capk-file`, or `opk_env_add_capk()`) for offline data
+  authentication. Without them ODA fails, which is the correct behaviour.
+- The example PIN entry reads from the keyboard **in clear**. Real terminals must use a
+  certified PIN pad (PCI PTS); see the [Disclaimer](#disclaimer).
 
 ## How the two implementations stay in sync
 
@@ -550,8 +660,11 @@ openpaykernel/
 │   │   ├── test_core.py              TLV, DOL, CAPK, certificate chain, CDA binding
 │   │   ├── test_kernels.py           end-to-end transactions (29 scenarios)
 │   │   ├── test_robustness.py        corrupted card responses never raise
+│   │   ├── test_hardware_adapter.py  PC/SC example adapter against a fake pyscard backend
 │   │   └── gen_vectors.py            writes c/tests/vectors/*.txt from the Python reference
-│   └── examples/demo.py              three transactions with an APDU trace
+│   └── examples/
+│       ├── demo.py                   three transactions against the simulator, with an APDU trace
+│       └── pcsc_reader.py            real PC/SC reader: contact or contactless transaction
 │
 └── c/                                ── C99 implementation (no malloc, no dependencies) ──
     ├── CMakeLists.txt                library `openpaykernel` + tests (ctest)
@@ -579,8 +692,12 @@ openpaykernel/
     │   │                             GENERATE AC with CDA, outcome
     │   └── opk_contact.c             opk_contact_process(): PSE / list of AIDs, ODA, PIN
     │                                 (plaintext + enciphered), online, scripts, 2nd GENERATE AC
+    ├── examples/
+    │   ├── example_common.h          study configuration, RNG, APDU-tracing reader, outcome printing
+    │   ├── reader_template.c         minimal adapter template: plug in your vendor SDK call
+    │   └── pcsc_terminal.c           real PC/SC terminal (build with -DOPK_BUILD_PCSC_EXAMPLE=ON)
     └── tests/
-        ├── test_core.c               TLV, TLV database, DOL, SHA-1 and RSA unit tests
+        ├── test_core.c               TLV, TLV database, DOL, SHA-1, RSA and Level-1 error tests
         ├── test_vectors.c            replays vectors byte for byte; OPK_FUZZ=<n> corrupts responses
         └── vectors/*.txt             19 conformance vectors generated by python/tests/gen_vectors.py
 ```
@@ -592,11 +709,41 @@ openpaykernel/
 - Kernel 3: Issuer Update Processing
 - Kernels 4 (Amex), 5 (JCB), 6 (Discover), 7 (UnionPay), RuPay, Mir, and the new C-8 kernel
 - ECC ODA (Book E) and SM2/SM3
-- PC/SC reader adapter and a terminal CLI
+- Terminal CLI with persistent configuration (PC/SC adapters already in `examples/`)
 - Issuer-side cryptogram (ARQC) verification for host simulators
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and
 [docs/CLEAN_ROOM.md](docs/CLEAN_ROOM.md) for how this code was produced.
+
+## Disclaimer
+
+**OpenPayKernel is a study project.** It exists to help people learn how EMV payment
+kernels work and to support research, testing tools and simulators.
+
+- **No warranty.** The software is provided "AS IS", without warranty of any kind, express or
+  implied, including merchantability, fitness for a particular purpose and non-infringement
+  (see sections 7 and 8 of the [Apache-2.0 license](LICENSE)). The authors and contributors
+  are **not liable** for any loss or damage arising from its use, including financial loss,
+  chargebacks, fraud, blocked cards, data breaches or regulatory penalties.
+- **Not bug-free.** The code has automated tests and fuzzing, but tests can't prove the
+  absence of defects. Some brand-specific rules were implemented from the public
+  specifications without access to official test suites and may be wrong. Expect bugs.
+- **Not certified.** It has **no** EMVCo Level 1/Level 2 type approval and no Visa, Mastercard
+  or other brand approval. Terminals that accept real payments must use approved kernels.
+- **Not for real money.** Do not use OpenPayKernel to accept, authorise or settle real payment
+  transactions, and do not connect it to a live acquirer or payment network.
+- **Not security-audited, not PCI compliant.** It has had no independent security review. PIN
+  handling in the examples is plaintext and does not meet PCI PIN/PTS requirements. Cardholder
+  data handling is not PCI DSS validated. The card simulator's cryptograms are stand-ins, not
+  real issuer cryptography.
+- **Test cards only.** Experiment only with EMV test cards, or with cards you own and accept the
+  risk for. Offline PIN tries and transaction counters on real cards are permanent.
+- **Your responsibility.** Anyone who builds on this code is solely responsible for testing,
+  certification, security, and compliance with the laws, scheme rules and regulations that
+  apply where they operate.
+- **Trademarks.** EMV® is a registered trademark of EMVCo, LLC. Visa, Mastercard and other brand
+  names belong to their owners and are used only to identify the specifications implemented.
+  This project is not affiliated with or endorsed by EMVCo or any payment brand.
 
 ## License
 

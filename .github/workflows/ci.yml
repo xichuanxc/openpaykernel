@@ -40,13 +40,19 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - name: Build
+      - name: Install PC/SC (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev
+      - name: Build (library, tests, examples incl. PC/SC)
         working-directory: c
         env:
           CC: ${{ matrix.cc }}
         run: |
-          cmake -S . -B build -DCMAKE_C_FLAGS="-Werror"
+          cmake -S . -B build -DCMAKE_C_FLAGS="-Werror" -DOPK_BUILD_PCSC_EXAMPLE=ON
           cmake --build build
+      - name: Run reader template example
+        working-directory: c
+        run: ./build/opk_reader_template
       - name: Test
         working-directory: c
         run: ctest --test-dir build --output-on-failure

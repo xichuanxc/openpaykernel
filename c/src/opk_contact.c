@@ -601,8 +601,8 @@ static int process_app(opk_session *s, const opk_contact_host *host, const uint8
     return 1;
 }
 
-int opk_contact_process(const opk_env *env, const opk_transaction *txn, const opk_reader *reader,
-                        const opk_contact_host *host, opk_outcome *out, opk_db *db)
+static int contact_process(const opk_env *env, const opk_transaction *txn, const opk_reader *reader,
+                           const opk_contact_host *host, opk_outcome *out, opk_db *db)
 {
     opk_app_candidate cands[OPK_MAX_CANDIDATES];
     opk_db_init(db);
@@ -659,4 +659,15 @@ int opk_contact_process(const opk_env *env, const opk_transaction *txn, const op
     }
     opk_outcome_end(out, OPK_L2_EMPTY_CANDIDATE_LIST, 0, OPK_MSG_PROCESSING_ERROR);
     return OPK_OK;
+}
+
+int opk_contact_process(const opk_env *env, const opk_transaction *txn, const opk_reader *reader,
+                        const opk_contact_host *host, opk_outcome *out, opk_db *db)
+{
+    int r = contact_process(env, txn, reader, host, out, db);
+    if (r == OPK_ERR_TRANSMIT) { /* card removed, timeout, ... (Level 1) */
+        opk_outcome_end(out, OPK_L2_OK, 0, OPK_MSG_PROCESSING_ERROR);
+        out->l1_error = 2;
+    }
+    return r;
 }

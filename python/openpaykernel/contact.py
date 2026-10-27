@@ -25,7 +25,7 @@ from .emvproc import (RESULT_FAILED, RESULT_SUCCESS, TSI_CARD_RISK, TSI_CVM, TSI
                       parse_gpo_response, processing_restrictions, read_application_data, retrieve_icc_pk,
                       retrieve_issuer_pk, static_data_to_authenticate, terminal_action_analysis,
                       terminal_risk_management)
-from .outcome import CVM, ErrorIndication, L2Error, Message, Outcome, Status, UIRequest
+from .outcome import CVM, ErrorIndication, L1Error, L2Error, Message, Outcome, Status, UIRequest
 
 PSE = b"1PAY.SYS.DDF01"
 
@@ -94,7 +94,14 @@ class ContactKernel:
 
     # ------------------------------------------------------------------ public entry
     def process(self, reader: apdu.Reader, txn: Transaction, log: list | None = None) -> ContactResult:
-        chan = apdu.Channel(reader, log)
+        try:
+            return self._process(apdu.Channel(reader, log), txn)
+        except apdu.TransmissionError:  # card removed, timeout, ... (Level 1)
+            out = Outcome(Status.END_APPLICATION, error=ErrorIndication(l1=L1Error.TRANSMISSION),
+                          ui_request=UIRequest(Message.PROCESSING_ERROR))
+            return ContactResult(out)
+
+    def _process(self, chan: apdu.Channel, txn: Transaction) -> ContactResult:
         try:
             cands = self.build_candidate_list(chan)
         except CardError as e:

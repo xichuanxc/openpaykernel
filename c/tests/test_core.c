@@ -82,12 +82,47 @@ static void test_rsa(void)
     CHECK(!memcmp(y, one, 8));
 }
 
+static int failing_transmit(void *ctx, const uint8_t *c, size_t cl, uint8_t *r, size_t *rl)
+{
+    (void)ctx; (void)c; (void)cl; (void)r; (void)rl;
+    return -1; /* card removed */
+}
+
+static void zero_rng(void *ctx, uint8_t *out, size_t n) { (void)ctx; memset(out, 0, n); }
+static int no_choose(void *c, const opk_app_candidate *a, int n) { (void)c; (void)a; (void)n; return 0; }
+static int no_pin(void *c, int o, int t, char *p) { (void)c; (void)o; (void)t; (void)p; return 0; }
+static int no_online(void *c, const opk_db *d, opk_online_response *r) { (void)c; (void)d; (void)r; return 0; }
+
+static void test_level1_error_fills_outcome(void)
+{
+    static opk_env env;
+    static opk_db db;
+    opk_transaction txn;
+    opk_outcome out;
+    memset(&env, 0, sizeof env);
+    opk_terminal_defaults(&env.terminal);
+    opk_aid_defaults(&env.aids[env.aid_count++], (const uint8_t *)"\xA0\x00\x00\x00\x03\x10\x10", 7);
+    env.rng = zero_rng;
+    opk_transaction_defaults(&txn, 100);
+    opk_reader reader = {failing_transmit, NULL};
+    opk_contact_host host = {no_choose, no_pin, no_online, NULL};
+
+    memset(&out, 0xAA, sizeof out);
+    CHECK(opk_contact_process(&env, &txn, &reader, &host, &out, &db) == OPK_ERR_TRANSMIT);
+    CHECK(out.status == OPK_STATUS_END_APPLICATION && out.l1_error == 2);
+
+    memset(&out, 0xAA, sizeof out);
+    opk_contactless_process(&env, &txn, &reader, &out, &db);
+    CHECK(out.status == OPK_STATUS_TRY_AGAIN && out.l1_error == 2);
+}
+
 int main(void)
 {
     test_tlv();
     test_db_and_dol();
     test_sha1();
     test_rsa();
+    test_level1_error_fills_outcome();
     printf("core tests: %s\n", fails ? "FAIL" : "ok");
     return fails ? 1 : 0;
 }

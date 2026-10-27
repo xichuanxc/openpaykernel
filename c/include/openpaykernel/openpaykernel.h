@@ -4,6 +4,11 @@
  * Public API. All storage is caller-owned and fixed-size; the library never
  * allocates memory. See docs/ARCHITECTURE.md for the design.
  *
+ * STUDY / RESEARCH USE ONLY. Not certified by EMVCo or any payment brand, not
+ * security-audited, not guaranteed to be bug-free, and provided "AS IS" without
+ * warranty (Apache-2.0). Do not use it to process real payments.
+ * See the Disclaimer in README.md.
+ *
  * SPDX-License-Identifier: Apache-2.0
  */
 #ifndef OPENPAYKERNEL_H

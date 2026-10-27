@@ -5,12 +5,15 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "openpaykernel"
 version = "0.1.0"
-description = "Open-source EMV Level 2 kernel: contact, contactless Entry Point, Visa (C-3) and Mastercard (C-2)"
+description = "Study/research EMV Level 2 kernel (not certified, no warranty): contact, contactless Entry Point, Visa C-3, Mastercard C-2"
 readme = "../README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.10"
 dependencies = []
 classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Education",
+  "Intended Audience :: Developers",
   "License :: OSI Approved :: Apache Software License",
   "Programming Language :: Python :: 3",
   "Topic :: Office/Business :: Financial",
@@ -18,6 +21,7 @@ classifiers = [
 
 [project.optional-dependencies]
 test = ["pytest>=7"]
+pcsc = ["pyscard>=2.0"]
 
 [tool.setuptools.packages.find]
 include = ["openpaykernel*"]
