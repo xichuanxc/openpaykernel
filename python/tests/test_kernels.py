@@ -1,4 +1,4 @@
-from openpaykernel import (AutoHost, ContactKernel, DiscoverKernel, EntryPoint, MastercardKernel, OnlineResponse,
+from openpaykernel import (AmexKernel, AutoHost, ContactKernel, DiscoverKernel, EntryPoint, MastercardKernel, OnlineResponse,
                            TerminalConfig, UnionPayKernel, VisaKernel)
 from openpaykernel.config import bit
 from openpaykernel.outcome import CVM, L2Error, Status
@@ -8,7 +8,8 @@ import scenarios as sc
 
 
 def ep(*aids):
-    return EntryPoint(sc.env(list(aids)), [VisaKernel(), MastercardKernel(), UnionPayKernel(), DiscoverKernel()])
+    return EntryPoint(sc.env(list(aids)), [VisaKernel(), MastercardKernel(), UnionPayKernel(), DiscoverKernel(),
+                                                AmexKernel()])
 
 
 # ---------------------------------------------------------------------------- Visa
@@ -339,3 +340,44 @@ def test_generate_ac_error_status_word_reports_status_bytes():
         out = ep(cfg).process(card, sc.txn(1000))
         assert out.status == Status.END_APPLICATION
         assert out.error.l2 == L2Error.STATUS_BYTES and out.error.sw12 == 0x6985
+
+
+# ---------------------------------------------------------------------------- American Express (kernel 4)
+def test_amex_cda_offline_approved_and_reader_capabilities_sent():
+    card = sc.amex_card()
+    out = ep(sc.amex_aid_cfg()).process(card, sc.txn(1000))
+    assert out.status == Status.APPROVED, out
+    gpo = [c for c, _ in card.log if c[1] == 0xA8][0]
+    assert bytes.fromhex("D8E00003") in gpo  # 9F6E sent in the PDOL data, CVM-required bit clear
+    assert out.cvm == CVM.NO_CVM and out.data_record[0x9F34] == bytes.fromhex("1F0302")
+
+
+def test_amex_cvm_required_sets_9f6e_and_uses_online_pin():
+    card = sc.amex_card()
+    out = ep(sc.amex_aid_cfg()).process(card, sc.txn(4000))
+    gpo = [c for c, _ in card.log if c[1] == 0xA8][0]
+    assert bytes.fromhex("D8E04003") in gpo  # byte 3 bit 7: CVM required
+    assert out.cvm == CVM.ONLINE_PIN and out.status == Status.ONLINE_REQUEST
+
+
+def test_amex_signature_when_reader_has_no_pin():
+    cfg = sc.amex_aid_cfg(extra={0x9F6E: bytes.fromhex("D8A00003")})  # mobile CVM + signature, no online PIN
+    out = ep(cfg).process(sc.amex_card(), sc.txn(4000))
+    assert out.cvm == CVM.SIGNATURE and out.receipt
+
+
+def test_amex_mobile_cvm():
+    card = sc.amex_card(extra_gpo=bytes.fromhex("9F7103010002"))
+    out = ep(sc.amex_aid_cfg()).process(card, sc.txn(4000))
+    assert out.cvm == CVM.CONFIRMATION_CODE_VERIFIED
+    assert out.data_record[0x9F34] == bytes.fromhex("010002")
+
+
+def test_amex_cda_failure_declines():
+    out = ep(sc.amex_aid_cfg()).process(sc.amex_card(corrupt_sdad=True), sc.txn(1000))
+    assert out.status == Status.DECLINED and out.error.l2 == L2Error.CAM_FAILED
+
+
+def test_amex_magstripe_only_card_is_not_supported():
+    out = ep(sc.amex_aid_cfg()).process(sc.amex_card(aip=bytes.fromhex("1900")), sc.txn(1000))
+    assert out.status == Status.END_APPLICATION and out.error.l2 == L2Error.MAGSTRIPE_NOT_SUPPORTED

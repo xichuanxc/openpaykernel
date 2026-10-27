@@ -2,12 +2,6 @@
  * SPDX-License-Identifier: Apache-2.0 */
 #include "opk_internal.h"
 
-static int no_pin(opk_session *s, uint8_t method, void *ctx)
-{
-    (void)s; (void)method; (void)ctx;
-    return OPK_RESULT_UNKNOWN;
-}
-
 static int64_t tag_amount(const opk_db *db, uint32_t tag, int64_t dflt)
 {
     size_t l;
@@ -95,7 +89,7 @@ int opk_kernel_mastercard(const opk_kernel_ctx *k, opk_outcome *out)
         caps[1] = v && l ? v[0] : 0x08;
         opk_db_set(db, 0x9F33, caps, 3);
         opk_cvm_result res;
-        opk_cvm_list_processing(s, caps, no_pin, NULL, &res);
+        opk_cvm_list_processing(s, caps, opk_k_no_pin, NULL, &res);
         opk_db_set(db, 0x9F34, res.results, 3);
         cvm = res.online_pin ? OPK_CVM_ONLINE_PIN : res.signature ? OPK_CVM_SIGNATURE : OPK_CVM_NO_CVM;
     }

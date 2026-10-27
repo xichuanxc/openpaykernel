@@ -16,10 +16,10 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 import scenarios as sc  # noqa: E402
 from openpaykernel import AutoHost, ContactKernel, EntryPoint, MastercardKernel, OnlineResponse, TerminalConfig, \
-    DiscoverKernel, UnionPayKernel, VisaKernel  # noqa: E402
+    AmexKernel, DiscoverKernel, UnionPayKernel, VisaKernel  # noqa: E402
 from openpaykernel.config import AidConfig  # noqa: E402
 
-REPORT_TAGS = [0x95, 0x9B, 0x9F34, 0x9F27, 0x8A, 0x9F66, 0x9F5B, 0x9F5D, 0x9F71]
+REPORT_TAGS = [0x95, 0x9B, 0x9F34, 0x9F27, 0x8A, 0x9F66, 0x9F5B, 0x9F5D, 0x9F71, 0x9F6E]
 
 
 def h(b: bytes) -> str:
@@ -82,7 +82,8 @@ def emit_result(lines, card, out, data):
 
 def contactless(name, card, aids, txn):
     env = sc.env(aids)
-    out = EntryPoint(env, [VisaKernel(), MastercardKernel(), UnionPayKernel(), DiscoverKernel()]).process(card, txn)
+    out = EntryPoint(env, [VisaKernel(), MastercardKernel(), UnionPayKernel(), DiscoverKernel(),
+                                  AmexKernel()]).process(card, txn)
     lines = [f"SCENARIO {name}", "MODE contactless"]
     emit_config(lines, sc.env(aids), txn)
     emit_result(lines, card, out, out.data_record)
@@ -124,6 +125,13 @@ def all_vectors():
     yield contactless("discover_cda_fail", sc.discover_card(corrupt_sdad=True), [sc.discover_aid_cfg()], sc.txn(1000))
     yield contactless("discover_cash_switch_interface", sc.discover_card(ctq=bytes.fromhex("0400")),
                       [sc.discover_aid_cfg()], sc.txn(1000, type=0x01))
+    yield contactless("amex_cda_approved", sc.amex_card(), [sc.amex_aid_cfg()], sc.txn(1000))
+    yield contactless("amex_online_pin", sc.amex_card(), [sc.amex_aid_cfg()], sc.txn(4000))
+    yield contactless("amex_mobile_cvm", sc.amex_card(extra_gpo=bytes.fromhex("9F7103010002")), [sc.amex_aid_cfg()],
+                      sc.txn(4000))
+    yield contactless("amex_cda_fail", sc.amex_card(corrupt_sdad=True), [sc.amex_aid_cfg()], sc.txn(1000))
+    yield contactless("amex_magstripe_only", sc.amex_card(aip=bytes.fromhex("1900")), [sc.amex_aid_cfg()],
+                      sc.txn(1000))
     yield contactless("mc_gac_error_sw", sc.mc_card(gac_sw=0x6985), [sc.mc_aid_cfg()], sc.txn(1000))
     yield contactless("discover_gac_error_sw", sc.discover_card(gac_sw=0x6985), [sc.discover_aid_cfg()], sc.txn(1000))
     yield contact("contact_dda_offline_pin",

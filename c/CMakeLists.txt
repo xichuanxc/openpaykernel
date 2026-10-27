@@ -17,7 +17,8 @@ add_library(openpaykernel
   src/opk_mastercard.c
   src/opk_contact.c
   src/opk_kernel_common.c
-  src/opk_discover.c)
+  src/opk_discover.c
+  src/opk_amex.c)
 target_include_directories(openpaykernel PUBLIC include)
 
 enable_testing()

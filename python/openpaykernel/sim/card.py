@@ -19,6 +19,7 @@ MASTERCARD_AID = bytes.fromhex("A0000000041010")
 VISA_AID = bytes.fromhex("A0000000031010")
 UNIONPAY_AID = bytes.fromhex("A000000333010102")
 DISCOVER_AID = bytes.fromhex("A0000001523010")
+AMEX_AID = bytes.fromhex("A00000002501")
 TEST_RID_INDEX = 0x92
 
 
@@ -78,6 +79,7 @@ class CardProfile:
     ddol: bytes | None = None
     gpo_sw: int = 0x9000
     gac_sw: int = 0x9000
+    extra_gpo: bytes = b""                  # additional TLVs in a format-2 GPO response
     in_pse: bool = True
     priority: int = 1
     keys: Keys = field(default_factory=test_keys)
@@ -229,7 +231,7 @@ class SimCard:
         if p.kind == "discover":  # AIP, AFL and Card Processing Requirements (9F71)
             body = enc(0x82, p.aip) + enc(0x94, self.afl) + (enc(0x9F71, p.ctq) if p.ctq else b"")
             return enc(0x77, body) + b"\x90\x00"
-        return enc(0x77, enc(0x82, p.aip) + enc(0x94, self.afl)) + b"\x90\x00"
+        return enc(0x77, enc(0x82, p.aip) + enc(0x94, self.afl) + p.extra_gpo) + b"\x90\x00"
 
     def _pdol_values(self) -> dict[int, bytes]:
         out, pos = {}, 0

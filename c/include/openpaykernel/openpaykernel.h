@@ -200,6 +200,7 @@ int opk_env_add_capk(opk_env *env, const opk_capk *k);
 
 /* ------------------------------------------------------------------ contactless */
 #define OPK_KERNEL_MASTERCARD 2u
+#define OPK_KERNEL_AMEX       4u
 #define OPK_KERNEL_VISA       3u
 #define OPK_KERNEL_DISCOVER   6u
 #define OPK_KERNEL_UNIONPAY   7u  /* qUICS: same quick flow as Visa (opk_visa.c) */

@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from openpaykernel import (CAPK, AidConfig, CAPKStore, ContactKernel, EntryPoint, Environment,  # noqa: E402
                            MastercardKernel, OnlineResponse, TerminalConfig, Transaction, UnionPayKernel,
-                           VisaKernel, DiscoverKernel)
+                           VisaKernel, DiscoverKernel, AmexKernel)
 from openpaykernel.apdu import TransmissionError  # noqa: E402
 from openpaykernel.tags import name  # noqa: E402
 
@@ -61,6 +61,7 @@ class PcscReader:
 VISA = bytes.fromhex("A0000000031010")
 MASTERCARD = bytes.fromhex("A0000000041010")
 DISCOVER = bytes.fromhex("A0000001523010")
+AMEX = bytes.fromhex("A00000002501")
 UNIONPAY = bytes.fromhex("A0000003330101")  # partial match: 010101 debit, 010102 credit, 010103 quasi-credit
 
 
@@ -82,6 +83,9 @@ def build_environment(capk_file: str | None) -> Environment:
         AidConfig(DISCOVER, kernel_id=6, floor_limit=10000, cl_transaction_limit=50000, cvm_required_limit=3000,
                   tac_default=bytes.fromhex("DC4000A800"), tac_denial=bytes.fromhex("0010000000"),
                   tac_online=bytes.fromhex("DC4004F800")),
+        AidConfig(AMEX, kernel_id=4, floor_limit=10000, cl_transaction_limit=50000, cvm_required_limit=3000,
+                  tac_default=bytes.fromhex("DC50FC9800"), tac_denial=bytes.fromhex("0010000000"),
+                  tac_online=bytes.fromhex("DE00FC9800"), extra={0x9F6E: bytes.fromhex("D8E00003")}),
         AidConfig(MASTERCARD, kernel_id=2, floor_limit=10000, extra=mc_kernel_config,
                   tac_default=bytes.fromhex("FC50A8A000"), tac_denial=bytes.fromhex("0000000000"),
                   tac_online=bytes.fromhex("FC50A8F800")),
@@ -152,7 +156,8 @@ def main() -> None:
         result = ContactKernel(env, ConsoleHost()).process(reader, txn, log)
         outcome, data = result.outcome, result.data
     else:
-        outcome = EntryPoint(env, [VisaKernel(), MastercardKernel(), UnionPayKernel(), DiscoverKernel()]).process(
+        outcome = EntryPoint(env, [VisaKernel(), MastercardKernel(), UnionPayKernel(), DiscoverKernel(),
+                                       AmexKernel()]).process(
             reader, txn, log)
         data = outcome.data_record
 

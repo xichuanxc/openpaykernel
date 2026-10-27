@@ -176,6 +176,7 @@ typedef struct {
 int opk_kernel_visa(const opk_kernel_ctx *k, opk_outcome *out);
 int opk_kernel_mastercard(const opk_kernel_ctx *k, opk_outcome *out);
 int opk_kernel_discover(const opk_kernel_ctx *k, opk_outcome *out);
+int opk_kernel_amex(const opk_kernel_ctx *k, opk_outcome *out);
 
 /* shared steps of the GENERATE AC kernels (opk_kernel_common.c) */
 #define OPK_K_CDA_FAILED  (-100) /* CDA verification failed; TVR "CDA failed" is set */
@@ -184,6 +185,7 @@ int opk_k_store_fci(opk_session *s, const opk_kernel_ctx *k); /* 1 ok, 0 not an 
 int opk_k_select_cda(opk_session *s, const uint8_t aip[2], int terminal_supports_cda);
 int opk_k_generate_ac(opk_session *s, int ac, int cda); /* cid >= 0, or OPK_K_* / OPK_ERR_* */
 opk_status opk_k_status_for(int cid);
+int opk_k_no_pin(opk_session *s, uint8_t method, void *ctx);
 void opk_k_final(opk_session *s, opk_outcome *o, opk_status st, opk_cvm cvm, opk_l2_error l2);
 void opk_k_select_next(opk_outcome *o, opk_l2_error l2, uint16_t sw);
 void opk_k_try_another_interface(opk_outcome *o);

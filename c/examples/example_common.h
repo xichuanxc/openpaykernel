@@ -44,7 +44,21 @@ static void add_tlv(opk_aid_config *a, uint32_t tag, const char *hex)
     a->extra_len = (uint16_t)(a->extra_len + n);
 }
 
-/* Visa + UnionPay + Discover + Mastercard study configuration (no CA public keys: ODA will fail, as expected). */
+/* Append a 2-byte-tag TLV given as hex. */
+static void add_tlv4(opk_aid_config *a, uint32_t tag, const char *hex)
+{
+    size_t n = strlen(hex) / 2;
+    a->extra[a->extra_len++] = (uint8_t)(tag >> 8);
+    a->extra[a->extra_len++] = (uint8_t)tag;
+    a->extra[a->extra_len++] = (uint8_t)n;
+    for (size_t i = 0; i < n; i++) {
+        unsigned b;
+        sscanf(hex + 2 * i, "%2x", &b);
+        a->extra[a->extra_len++] = (uint8_t)b;
+    }
+}
+
+/* Visa + UnionPay + Discover + Amex + Mastercard study configuration (no CA public keys: ODA will fail, as expected). */
 static void example_env(opk_env *env)
 {
     memset(env, 0, sizeof *env);
@@ -80,6 +94,17 @@ static void example_env(opk_env *env)
     memcpy(disc->tac_default, "\xDC\x40\x00\xA8\x00", 5);
     memcpy(disc->tac_denial, "\x00\x10\x00\x00\x00", 5);
     memcpy(disc->tac_online, "\xDC\x40\x04\xF8\x00", 5);
+
+    opk_aid_config *amex = &env->aids[env->aid_count++];
+    opk_aid_defaults(amex, (const uint8_t *)"\xA0\x00\x00\x00\x25\x01", 6);
+    amex->kernel_id = OPK_KERNEL_AMEX;
+    amex->floor_limit = 10000;
+    amex->cl_transaction_limit = 50000;
+    amex->cvm_required_limit = 3000;
+    memcpy(amex->tac_default, "\xDC\x50\xFC\x98\x00", 5);
+    memcpy(amex->tac_denial, "\x00\x10\x00\x00\x00", 5);
+    memcpy(amex->tac_online, "\xDE\x00\xFC\x98\x00", 5);
+    add_tlv4(amex, 0x9F6E, "D8E00003"); /* Enhanced Contactless Reader Capabilities */
 
     opk_aid_config *mc = &env->aids[env->aid_count++];
     opk_aid_defaults(mc, (const uint8_t *)"\xA0\x00\x00\x00\x04\x10\x10", 7);

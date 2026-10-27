@@ -18,8 +18,8 @@ use std::collections::BTreeMap;
 
 use openpaykernel::apdu::{Reader, TransmissionError};
 use openpaykernel::{
-    AidConfig, AppCandidate, CapkStore, ContactHost, ContactKernel, DiscoverKernel, EntryPoint, Environment,
-    MastercardKernel, OnlineResponse, TerminalConfig, Transaction, UnionPayKernel, VisaKernel,
+    AidConfig, AmexKernel, AppCandidate, CapkStore, ContactHost, ContactKernel, DiscoverKernel, EntryPoint,
+    Environment, MastercardKernel, OnlineResponse, TerminalConfig, Transaction, UnionPayKernel, VisaKernel,
 };
 
 // ---------------------------------------------------------------- your hardware goes here
@@ -92,6 +92,12 @@ fn environment() -> Environment {
     disc.floor_limit = 10000;
     disc.cl_transaction_limit = Some(50000);
     disc.cvm_required_limit = Some(3000);
+    let mut amex = AidConfig::new(&[0xA0, 0x00, 0x00, 0x00, 0x25, 0x01]);
+    amex.kernel_id = 4;
+    amex.floor_limit = 10000;
+    amex.cl_transaction_limit = Some(50000);
+    amex.cvm_required_limit = Some(3000);
+    amex.extra.insert(0x9F6E, vec![0xD8, 0xE0, 0x00, 0x03]); // Enhanced Contactless Reader Capabilities
     let mut upi = AidConfig::new(&[0xA0, 0x00, 0x00, 0x03, 0x33, 0x01, 0x01]); // partial match: 0101xx
     upi.kernel_id = 7;
     upi.floor_limit = 10000;
@@ -108,7 +114,7 @@ fn environment() -> Environment {
             *b = seed as u8;
         }
     });
-    Environment::new(TerminalConfig::default(), vec![visa, mc, upi, disc], CapkStore::new(), rng)
+    Environment::new(TerminalConfig::default(), vec![visa, mc, upi, disc, amex], CapkStore::new(), rng)
 }
 
 fn main() {
@@ -122,7 +128,13 @@ fn main() {
     } else {
         let mut ep = EntryPoint::new(
             environment(),
-            vec![Box::new(VisaKernel), Box::new(MastercardKernel), Box::new(UnionPayKernel), Box::new(DiscoverKernel)],
+            vec![
+                Box::new(VisaKernel),
+                Box::new(MastercardKernel),
+                Box::new(UnionPayKernel),
+                Box::new(DiscoverKernel),
+                Box::new(AmexKernel),
+            ],
         );
         let o = ep.process(&mut reader, &txn, None);
         let d = o.data_record.clone();

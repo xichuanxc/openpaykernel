@@ -53,6 +53,7 @@ static kernel_fn kernel_for(uint32_t k)
     case OPK_KERNEL_VISA: return opk_kernel_visa;
     case OPK_KERNEL_UNIONPAY: return opk_kernel_visa;
     case OPK_KERNEL_DISCOVER: return opk_kernel_discover;
+    case OPK_KERNEL_AMEX: return opk_kernel_amex;
     default: return NULL;
     }
 }

@@ -90,6 +90,13 @@ int opk_k_generate_ac(opk_session *s, int ac, int cda)
     return cid;
 }
 
+/* Contactless kernels never verify a PIN with the card: online PIN / signature are recorded only. */
+int opk_k_no_pin(opk_session *s, uint8_t method, void *ctx)
+{
+    (void)s; (void)method; (void)ctx;
+    return OPK_RESULT_UNKNOWN;
+}
+
 opk_status opk_k_status_for(int cid)
 {
     return cid == AC_TC ? OPK_STATUS_APPROVED : cid == AC_ARQC ? OPK_STATUS_ONLINE_REQUEST : OPK_STATUS_DECLINED;

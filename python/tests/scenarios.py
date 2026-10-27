@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 from openpaykernel import AidConfig, CAPKStore, Environment, TerminalConfig, Transaction
-from openpaykernel.sim.card import DISCOVER_AID, MASTERCARD_AID, UNIONPAY_AID, VISA_AID, CardProfile, SimCard, test_keys
+from openpaykernel.sim.card import AMEX_AID, DISCOVER_AID, MASTERCARD_AID, UNIONPAY_AID, VISA_AID, CardProfile, SimCard, test_keys
 
 VISA_PDOL = bytes.fromhex("9F66049F02069F03069F1A0295055F2A029A039C019F3704")
 MC_PDOL = bytes.fromhex("9F3501")
+AMEX_PDOL = bytes.fromhex("9F35019F6E049F02069F37045F2A029A039C019F1A02")
 
 
 class CounterRng:
@@ -27,6 +28,7 @@ def capks() -> CAPKStore:
     store.add(k.capk(MASTERCARD_AID[:5]))
     store.add(k.capk(UNIONPAY_AID[:5]))
     store.add(k.capk(DISCOVER_AID[:5]))
+    store.add(k.capk(AMEX_AID[:5]))
     return store
 
 
@@ -72,6 +74,14 @@ def discover_aid_cfg(**kw) -> AidConfig:
     return AidConfig(**base)
 
 
+def amex_aid_cfg(**kw) -> AidConfig:
+    base = dict(aid=AMEX_AID, kernel_id=4, floor_limit=10000, cl_transaction_limit=50000, cvm_required_limit=3000,
+                tac_default=bytes.fromhex("DC50FC9800"), tac_denial=bytes.fromhex("0010000000"),
+                tac_online=bytes.fromhex("DE00FC9800"), extra={0x9F6E: bytes.fromhex("D8E00003")})
+    base.update(kw)
+    return AidConfig(**base)
+
+
 def contact_aid_cfgs() -> list[AidConfig]:
     return [
         AidConfig(VISA_AID[:5] + b"\x10\x10", floor_limit=10000, tac_default=bytes.fromhex("DC4000A800"),
@@ -111,6 +121,14 @@ def upi_card(**kw) -> SimCard:
 def discover_card(**kw) -> SimCard:
     base = dict(aid=DISCOVER_AID, kind="discover", aip=bytes.fromhex("1981"), oda="cda", pdol=VISA_PDOL,
                 ctq=bytes.fromhex("4000"), pan=bytes.fromhex("6510000000001250"), label=b"DISCOVER",
+                cvm_list=bytes.fromhex("000000000000000042031E031F03"))
+    base.update(kw)
+    return SimCard(CardProfile(**base))
+
+
+def amex_card(**kw) -> SimCard:
+    base = dict(aid=AMEX_AID, kind="amex", aip=bytes.fromhex("1981"), oda="cda", pdol=AMEX_PDOL,
+                pan=bytes.fromhex("374245455400126F"), label=b"AMERICAN EXPRESS",
                 cvm_list=bytes.fromhex("000000000000000042031E031F03"))
     base.update(kw)
     return SimCard(CardProfile(**base))
