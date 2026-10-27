@@ -1,5 +1,5 @@
-from openpaykernel import (AutoHost, ContactKernel, EntryPoint, MastercardKernel, OnlineResponse, TerminalConfig,
-                           UnionPayKernel, VisaKernel)
+from openpaykernel import (AutoHost, ContactKernel, DiscoverKernel, EntryPoint, MastercardKernel, OnlineResponse,
+                           TerminalConfig, UnionPayKernel, VisaKernel)
 from openpaykernel.config import bit
 from openpaykernel.outcome import CVM, L2Error, Status
 from openpaykernel.sim.card import CardProfile, SimCard, VISA_AID
@@ -8,7 +8,7 @@ import scenarios as sc
 
 
 def ep(*aids):
-    return EntryPoint(sc.env(list(aids)), [VisaKernel(), MastercardKernel(), UnionPayKernel()])
+    return EntryPoint(sc.env(list(aids)), [VisaKernel(), MastercardKernel(), UnionPayKernel(), DiscoverKernel()])
 
 
 # ---------------------------------------------------------------------------- Visa
@@ -295,3 +295,47 @@ def test_upi_selected_by_rid_default_kernel_id():
     # AID config without an explicit kernel ID resolves to kernel 7 from the UnionPay RID
     out = ep(sc.upi_aid_cfg(kernel_id=0)).process(sc.upi_card(), sc.txn(1000))
     assert out.status == Status.APPROVED
+
+
+# ---------------------------------------------------------------------------- Discover (kernel 6)
+def test_discover_cda_offline_approved():
+    card = sc.discover_card()
+    out = ep(sc.discover_aid_cfg()).process(card, sc.txn(1000))
+    assert out.status == Status.APPROVED, out
+    assert out.cvm == CVM.NO_CVM and out.data_record[0x9F34] == bytes.fromhex("3F0000")
+    gac = [c for c, _ in card.log if c[1] == 0xAE][0]
+    assert gac[2] == 0x50  # TC + CDA
+    assert out.data_record[0x9F71] == bytes.fromhex("4000")
+
+
+def test_discover_cvm_required_signature_from_cpr():
+    out = ep(sc.discover_aid_cfg()).process(sc.discover_card(), sc.txn(4000))
+    assert out.status == Status.APPROVED and out.cvm == CVM.SIGNATURE and out.receipt
+    assert out.data_record[0x9F34] == bytes.fromhex("1E0300")
+
+
+def test_discover_online_pin_forces_online():
+    out = ep(sc.discover_aid_cfg()).process(sc.discover_card(ctq=bytes.fromhex("8000")), sc.txn(4000))
+    assert out.status == Status.ONLINE_REQUEST and out.cvm == CVM.ONLINE_PIN
+
+
+def test_discover_cda_failure_declines():
+    out = ep(sc.discover_aid_cfg()).process(sc.discover_card(corrupt_sdad=True), sc.txn(1000))
+    assert out.status == Status.DECLINED and out.error.l2.name == "CAM_FAILED"
+
+
+def test_discover_cash_switches_interface_when_cpr_asks():
+    out = ep(sc.discover_aid_cfg()).process(sc.discover_card(ctq=bytes.fromhex("0400")), sc.txn(1000, type=0x01))
+    assert out.status == Status.TRY_ANOTHER_INTERFACE
+
+
+def test_discover_no_cvm_possible_declines():
+    out = ep(sc.discover_aid_cfg()).process(sc.discover_card(ctq=bytes.fromhex("0000")), sc.txn(4000))
+    assert out.status == Status.DECLINED and out.data_record[0x9F34] == bytes.fromhex("3F0001")
+
+
+def test_generate_ac_error_status_word_reports_status_bytes():
+    for card, cfg in ((sc.mc_card(gac_sw=0x6985), sc.mc_aid_cfg()), (sc.discover_card(gac_sw=0x6985), sc.discover_aid_cfg())):
+        out = ep(cfg).process(card, sc.txn(1000))
+        assert out.status == Status.END_APPLICATION
+        assert out.error.l2 == L2Error.STATUS_BYTES and out.error.sw12 == 0x6985

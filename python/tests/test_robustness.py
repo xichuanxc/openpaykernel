@@ -1,7 +1,8 @@
 """Corrupted card responses must lead to an Outcome, never to an unhandled exception."""
 import random
 
-from openpaykernel import AutoHost, ContactKernel, EntryPoint, MastercardKernel, UnionPayKernel, VisaKernel
+from openpaykernel import (AutoHost, ContactKernel, DiscoverKernel, EntryPoint, MastercardKernel, UnionPayKernel,
+                           VisaKernel)
 from openpaykernel.outcome import Outcome
 
 import scenarios as sc
@@ -25,9 +26,9 @@ class Mutating:
 
 def test_contactless_survives_corruption():
     for seed in range(300):
-        card = [sc.mc_card, sc.visa_card, sc.upi_card][seed % 3]()
-        ep = EntryPoint(sc.env([sc.visa_aid_cfg(), sc.mc_aid_cfg(), sc.upi_aid_cfg()]),
-                        [VisaKernel(), MastercardKernel(), UnionPayKernel()])
+        card = [sc.mc_card, sc.visa_card, sc.upi_card, sc.discover_card][seed % 4]()
+        ep = EntryPoint(sc.env([sc.visa_aid_cfg(), sc.mc_aid_cfg(), sc.upi_aid_cfg(), sc.discover_aid_cfg()]),
+                        [VisaKernel(), MastercardKernel(), UnionPayKernel(), DiscoverKernel()])
         assert isinstance(ep.process(Mutating(card, seed), sc.txn(1000 + seed)), Outcome)
 
 

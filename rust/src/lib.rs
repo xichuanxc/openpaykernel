@@ -49,7 +49,7 @@ pub use capk::{Capk, CapkStore};
 pub use config::{AidConfig, Environment, TerminalConfig, Transaction};
 pub use contact::{AppCandidate, ContactHost, ContactKernel, ContactResult, OnlineResponse};
 pub use entry_point::{ContactlessKernel, EntryPoint};
-pub use kernels::{mastercard::MastercardKernel, unionpay::UnionPayKernel, visa::VisaKernel};
+pub use kernels::{discover::DiscoverKernel, mastercard::MastercardKernel, unionpay::UnionPayKernel, visa::VisaKernel};
 pub use outcome::{Cvm, Outcome, Status};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

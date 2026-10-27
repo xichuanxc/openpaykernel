@@ -44,7 +44,7 @@ static void add_tlv(opk_aid_config *a, uint32_t tag, const char *hex)
     a->extra_len = (uint16_t)(a->extra_len + n);
 }
 
-/* Visa + UnionPay + Mastercard study configuration (no CA public keys: ODA will fail, as expected). */
+/* Visa + UnionPay + Discover + Mastercard study configuration (no CA public keys: ODA will fail, as expected). */
 static void example_env(opk_env *env)
 {
     memset(env, 0, sizeof *env);
@@ -70,6 +70,16 @@ static void example_env(opk_env *env)
     memcpy(upi->tac_default, "\xD8\x40\x00\xA8\x00", 5);
     memcpy(upi->tac_denial, "\x00\x10\x00\x00\x00", 5);
     memcpy(upi->tac_online, "\xD8\x40\x04\xF8\x00", 5);
+
+    opk_aid_config *disc = &env->aids[env->aid_count++];
+    opk_aid_defaults(disc, (const uint8_t *)"\xA0\x00\x00\x01\x52\x30\x10", 7);
+    disc->kernel_id = OPK_KERNEL_DISCOVER;
+    disc->floor_limit = 10000;
+    disc->cl_transaction_limit = 50000;
+    disc->cvm_required_limit = 3000;
+    memcpy(disc->tac_default, "\xDC\x40\x00\xA8\x00", 5);
+    memcpy(disc->tac_denial, "\x00\x10\x00\x00\x00", 5);
+    memcpy(disc->tac_online, "\xDC\x40\x04\xF8\x00", 5);
 
     opk_aid_config *mc = &env->aids[env->aid_count++];
     opk_aid_defaults(mc, (const uint8_t *)"\xA0\x00\x00\x00\x04\x10\x10", 7);

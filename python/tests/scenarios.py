@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from openpaykernel import AidConfig, CAPKStore, Environment, TerminalConfig, Transaction
-from openpaykernel.sim.card import MASTERCARD_AID, UNIONPAY_AID, VISA_AID, CardProfile, SimCard, test_keys
+from openpaykernel.sim.card import DISCOVER_AID, MASTERCARD_AID, UNIONPAY_AID, VISA_AID, CardProfile, SimCard, test_keys
 
 VISA_PDOL = bytes.fromhex("9F66049F02069F03069F1A0295055F2A029A039C019F3704")
 MC_PDOL = bytes.fromhex("9F3501")
@@ -26,6 +26,7 @@ def capks() -> CAPKStore:
     store.add(k.capk(VISA_AID[:5]))
     store.add(k.capk(MASTERCARD_AID[:5]))
     store.add(k.capk(UNIONPAY_AID[:5]))
+    store.add(k.capk(DISCOVER_AID[:5]))
     return store
 
 
@@ -62,6 +63,15 @@ def upi_aid_cfg(**kw) -> AidConfig:
     return AidConfig(**base)
 
 
+def discover_aid_cfg(**kw) -> AidConfig:
+    base = dict(aid=DISCOVER_AID, kernel_id=6, floor_limit=10000, cl_transaction_limit=50000,
+                cvm_required_limit=3000, ttq=bytes.fromhex("36004000"),
+                tac_default=bytes.fromhex("DC4000A800"), tac_denial=bytes.fromhex("0010000000"),
+                tac_online=bytes.fromhex("DC4004F800"))
+    base.update(kw)
+    return AidConfig(**base)
+
+
 def contact_aid_cfgs() -> list[AidConfig]:
     return [
         AidConfig(VISA_AID[:5] + b"\x10\x10", floor_limit=10000, tac_default=bytes.fromhex("DC4000A800"),
@@ -94,6 +104,14 @@ def mc_card(**kw) -> SimCard:
 def upi_card(**kw) -> SimCard:
     base = dict(aid=UNIONPAY_AID, kind="unionpay", aip=bytes.fromhex("2000"), pdol=VISA_PDOL,
                 ctq=bytes.fromhex("6000"), oda="dda", label=b"UNIONPAY", pan=bytes.fromhex("6250947000000014"))
+    base.update(kw)
+    return SimCard(CardProfile(**base))
+
+
+def discover_card(**kw) -> SimCard:
+    base = dict(aid=DISCOVER_AID, kind="discover", aip=bytes.fromhex("1981"), oda="cda", pdol=VISA_PDOL,
+                ctq=bytes.fromhex("4000"), pan=bytes.fromhex("6510000000001250"), label=b"DISCOVER",
+                cvm_list=bytes.fromhex("000000000000000042031E031F03"))
     base.update(kw)
     return SimCard(CardProfile(**base))
 

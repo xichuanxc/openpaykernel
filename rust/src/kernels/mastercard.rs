@@ -6,14 +6,12 @@ use alloc::vec::Vec;
 use crate::apdu::{self, TransmissionError};
 use crate::config::{bcd_to_int, bit};
 use crate::emvproc::{
-    card_err, check_mandatory, cvm_list_processing, parse_generate_ac, parse_gpo_response, processing_restrictions,
-    read_application_data, retrieve_icc_pk, terminal_action_analysis, KResult, KernelError, Session, RESULT_UNKNOWN,
-    TVR_CDA_FAILED, TVR_FLOOR_LIMIT, TVR_ODA_NOT_PERFORMED,
+    card_err, check_mandatory, cvm_list_processing, parse_gpo_response, processing_restrictions, read_application_data,
+    terminal_action_analysis, KResult, KernelError, Session, RESULT_UNKNOWN, TVR_FLOOR_LIMIT,
 };
 use crate::entry_point::{ContactlessKernel, KernelContext};
-use crate::oda;
-use crate::outcome::{Cvm, L2Error, Message, Outcome, Status};
-use crate::tlv;
+use crate::kernels::common;
+use crate::outcome::{Cvm, L2Error, Message, Outcome};
 
 const DATA_RECORD_TAGS: &[u32] = &[
     0x9F02, 0x9F03, 0x9F26, 0x5F24, 0x82, 0x50, 0x5A, 0x5F34, 0x9F12, 0x9F36, 0x9F07, 0x9F09, 0x84, 0x9F27, 0x9F34,
@@ -48,12 +46,9 @@ impl ContactlessKernel for MastercardKernel {
 
 fn run(fci_raw: &[u8], adf_name: &[u8], s: &mut Session) -> KResult<Outcome> {
     let cfg = s.aid;
-    let fci = tlv::parse(fci_raw)?;
-    if fci.first().map(|t| t.tag) != Some(0x6F) {
+    if !common::store_fci(s, fci_raw, adf_name)? {
         return Ok(Outcome::select_next(L2Error::ParsingError, 0));
     }
-    s.db.store_card_data(&fci)?;
-    s.db.set(0x9F06, adf_name);
     let kc: Vec<u8> = s.get(0xDF811B).unwrap_or(&[0x20]).to_vec();
     let kc = Some(kc.as_slice());
 
@@ -80,19 +75,8 @@ fn run(fci_raw: &[u8], adf_name: &[u8], s: &mut Session) -> KResult<Outcome> {
     check_mandatory(s, &[0x5F24, 0x5A, 0x8C, 0x8D])?;
 
     // 3. ODA selection: C-2 supports only CDA
-    let cda = bit(aip, 1, 1) && bit(Some(s.get(0xDF811F).unwrap_or(&[0x08])), 1, 4);
-    if !cda {
-        s.set_tvr(TVR_ODA_NOT_PERFORMED);
-    } else {
-        let rid: Vec<u8> = s.get(0x9F06).unwrap_or(&[]).iter().take(5).copied().collect();
-        let found = match s.get(0x8F) {
-            Some(idx) if !idx.is_empty() => s.env.capks.find(&rid, idx[0], Some(&s.txn.date)).is_some(),
-            _ => false,
-        };
-        if !found {
-            s.set_tvr(TVR_CDA_FAILED);
-        }
-    }
+    let security_cda = bit(Some(s.get(0xDF811F).unwrap_or(&[0x08])), 1, 4);
+    let cda = common::select_cda(s, aip, security_cda);
 
     // 4. Processing restrictions
     processing_restrictions(s)?;
@@ -144,68 +128,7 @@ fn run(fci_raw: &[u8], adf_name: &[u8], s: &mut Session) -> KResult<Outcome> {
     let online_capable = s.env.terminal.online_capable();
     let ac_type = terminal_action_analysis(s, &tac_denial, &tac_online, &tac_default, online_capable);
 
-    // 8. GENERATE AC
-    let request_cda = cda && !s.tvr_bit(TVR_CDA_FAILED) && ac_type != apdu::AAC;
-    let cdol1 = s.get(0x8C).unwrap_or(&[]).to_vec();
-    s.cdol1_data = s.build_dol(&cdol1)?;
-    let p1 = ac_type | if request_cda { apdu::CDA_REQUESTED } else { 0 };
-    let r = s.exchange(&apdu::generate_ac(p1, &s.cdol1_data))?;
-    if !r.ok() {
-        return Ok(Outcome::end_application(L2Error::StatusBytes, r.sw, Some(Message::ProcessingError)));
-    }
-    let children = parse_generate_ac(&r.data, &mut s.db)?;
-    let cid_byte = s.get(0x9F27).and_then(|c| c.first().copied()).unwrap_or(0);
-    let cid = cid_byte & 0xC0;
-
-    if request_cda && cid != apdu::AAC {
-        let sdad = match s.get(0x9F4B) {
-            Some(v) => v.to_vec(),
-            None => {
-                s.set_tvr(TVR_CDA_FAILED);
-                return Ok(outcome(s, Status::Declined, cvm, L2Error::CamFailed));
-            }
-        };
-        let verified = retrieve_icc_pk(s).and_then(|icc| {
-            let mut tx = s.pdol_data.clone();
-            tx.extend_from_slice(&s.cdol1_data);
-            for (tag, enc) in &children {
-                if *tag != 0x9F4B {
-                    tx.extend_from_slice(enc);
-                }
-            }
-            oda::verify_cda(&icc, &sdad, s.get(0x9F37).unwrap_or(&[]), cid_byte, &tx)
-        });
-        match verified {
-            Ok((ac, dd)) => {
-                s.db.set(0x9F26, &ac);
-                s.db.set(0x9F4C, oda::icc_dynamic_number(&dd));
-            }
-            Err(_) => {
-                s.set_tvr(TVR_CDA_FAILED);
-                return Ok(outcome(s, Status::Declined, cvm, L2Error::CamFailed));
-            }
-        }
-    } else if !s.db.has(0x9F26) {
-        return card_err();
-    }
-    let status = match cid {
-        apdu::TC => Status::Approved,
-        apdu::ARQC => Status::OnlineRequest,
-        _ => Status::Declined,
-    };
-    Ok(outcome(s, status, cvm, L2Error::Ok))
-}
-
-fn outcome(s: &mut Session, status: Status, cvm: Cvm, l2: L2Error) -> Outcome {
-    s.sync();
-    let msg = match status {
-        Status::Approved if cvm == Cvm::Signature => Message::ApprovedSign,
-        Status::Approved => Message::Approved,
-        Status::Declined => Message::NotAuthorised,
-        _ => Message::Authorising,
-    };
-    let mut o = Outcome::new(status, cvm, Some(msg));
-    o.error.l2 = l2;
-    o.data_record = s.db.subset(DATA_RECORD_TAGS);
-    o
+    // 8. GENERATE AC (with CDA when selected)
+    let r = common::generate_ac_with_cda(s, ac_type, cda)?;
+    Ok(common::gac_outcome(s, r, cvm, DATA_RECORD_TAGS))
 }

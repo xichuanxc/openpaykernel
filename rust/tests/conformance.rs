@@ -6,7 +6,7 @@ mod common;
 use std::collections::BTreeMap;
 
 use common::*;
-use openpaykernel::{ContactKernel, EntryPoint, MastercardKernel, Outcome, UnionPayKernel, VisaKernel};
+use openpaykernel::{ContactKernel, DiscoverKernel, EntryPoint, MastercardKernel, Outcome, UnionPayKernel, VisaKernel};
 
 fn run(v: &common::Vector, reader: &mut Replay) -> (Outcome, BTreeMap<u32, Vec<u8>>) {
     let env = environment(v);
@@ -15,8 +15,10 @@ fn run(v: &common::Vector, reader: &mut Replay) -> (Outcome, BTreeMap<u32, Vec<u
         let r = k.process(reader, &v.txn, None);
         (r.outcome, r.data)
     } else {
-        let mut ep =
-            EntryPoint::new(env, vec![Box::new(VisaKernel), Box::new(MastercardKernel), Box::new(UnionPayKernel)]);
+        let mut ep = EntryPoint::new(
+            env,
+            vec![Box::new(VisaKernel), Box::new(MastercardKernel), Box::new(UnionPayKernel), Box::new(DiscoverKernel)],
+        );
         let o = ep.process(reader, &v.txn, None);
         let d = o.data_record.clone();
         (o, d)

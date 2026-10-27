@@ -18,8 +18,8 @@ use std::collections::BTreeMap;
 
 use openpaykernel::apdu::{Reader, TransmissionError};
 use openpaykernel::{
-    AidConfig, AppCandidate, CapkStore, ContactHost, ContactKernel, EntryPoint, Environment, MastercardKernel,
-    OnlineResponse, TerminalConfig, Transaction, UnionPayKernel, VisaKernel,
+    AidConfig, AppCandidate, CapkStore, ContactHost, ContactKernel, DiscoverKernel, EntryPoint, Environment,
+    MastercardKernel, OnlineResponse, TerminalConfig, Transaction, UnionPayKernel, VisaKernel,
 };
 
 // ---------------------------------------------------------------- your hardware goes here
@@ -87,6 +87,11 @@ fn environment() -> Environment {
     let mut mc = AidConfig::new(&[0xA0, 0x00, 0x00, 0x00, 0x04, 0x10, 0x10]);
     mc.kernel_id = 2;
     mc.floor_limit = 10000;
+    let mut disc = AidConfig::new(&[0xA0, 0x00, 0x00, 0x01, 0x52, 0x30, 0x10]);
+    disc.kernel_id = 6;
+    disc.floor_limit = 10000;
+    disc.cl_transaction_limit = Some(50000);
+    disc.cvm_required_limit = Some(3000);
     let mut upi = AidConfig::new(&[0xA0, 0x00, 0x00, 0x03, 0x33, 0x01, 0x01]); // partial match: 0101xx
     upi.kernel_id = 7;
     upi.floor_limit = 10000;
@@ -103,7 +108,7 @@ fn environment() -> Environment {
             *b = seed as u8;
         }
     });
-    Environment::new(TerminalConfig::default(), vec![visa, mc, upi], CapkStore::new(), rng)
+    Environment::new(TerminalConfig::default(), vec![visa, mc, upi, disc], CapkStore::new(), rng)
 }
 
 fn main() {
@@ -117,7 +122,7 @@ fn main() {
     } else {
         let mut ep = EntryPoint::new(
             environment(),
-            vec![Box::new(VisaKernel), Box::new(MastercardKernel), Box::new(UnionPayKernel)],
+            vec![Box::new(VisaKernel), Box::new(MastercardKernel), Box::new(UnionPayKernel), Box::new(DiscoverKernel)],
         );
         let o = ep.process(&mut reader, &txn, None);
         let d = o.data_record.clone();

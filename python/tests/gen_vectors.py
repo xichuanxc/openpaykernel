@@ -16,10 +16,10 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 import scenarios as sc  # noqa: E402
 from openpaykernel import AutoHost, ContactKernel, EntryPoint, MastercardKernel, OnlineResponse, TerminalConfig, \
-    UnionPayKernel, VisaKernel  # noqa: E402
+    DiscoverKernel, UnionPayKernel, VisaKernel  # noqa: E402
 from openpaykernel.config import AidConfig  # noqa: E402
 
-REPORT_TAGS = [0x95, 0x9B, 0x9F34, 0x9F27, 0x8A, 0x9F66, 0x9F5B, 0x9F5D]
+REPORT_TAGS = [0x95, 0x9B, 0x9F34, 0x9F27, 0x8A, 0x9F66, 0x9F5B, 0x9F5D, 0x9F71]
 
 
 def h(b: bytes) -> str:
@@ -82,7 +82,7 @@ def emit_result(lines, card, out, data):
 
 def contactless(name, card, aids, txn):
     env = sc.env(aids)
-    out = EntryPoint(env, [VisaKernel(), MastercardKernel(), UnionPayKernel()]).process(card, txn)
+    out = EntryPoint(env, [VisaKernel(), MastercardKernel(), UnionPayKernel(), DiscoverKernel()]).process(card, txn)
     lines = [f"SCENARIO {name}", "MODE contactless"]
     emit_config(lines, sc.env(aids), txn)
     emit_result(lines, card, out, out.data_record)
@@ -117,6 +117,15 @@ def all_vectors():
                       [sc.upi_aid_cfg()], sc.txn(4000))
     yield contactless("upi_fdda_fail_declined", sc.upi_card(corrupt_sdad=True, ctq=bytes.fromhex("0000")),
                       [sc.upi_aid_cfg()], sc.txn(1000))
+    yield contactless("discover_cda_approved", sc.discover_card(), [sc.discover_aid_cfg()], sc.txn(1000))
+    yield contactless("discover_signature", sc.discover_card(), [sc.discover_aid_cfg()], sc.txn(4000))
+    yield contactless("discover_online_pin", sc.discover_card(ctq=bytes.fromhex("8000")), [sc.discover_aid_cfg()],
+                      sc.txn(4000))
+    yield contactless("discover_cda_fail", sc.discover_card(corrupt_sdad=True), [sc.discover_aid_cfg()], sc.txn(1000))
+    yield contactless("discover_cash_switch_interface", sc.discover_card(ctq=bytes.fromhex("0400")),
+                      [sc.discover_aid_cfg()], sc.txn(1000, type=0x01))
+    yield contactless("mc_gac_error_sw", sc.mc_card(gac_sw=0x6985), [sc.mc_aid_cfg()], sc.txn(1000))
+    yield contactless("discover_gac_error_sw", sc.discover_card(gac_sw=0x6985), [sc.discover_aid_cfg()], sc.txn(1000))
     yield contact("contact_dda_offline_pin",
                   sc.contact_card(cvm_list=bytes.fromhex("000000000000000041031E031F03")), sc.txn(2000),
                   ScriptHost())

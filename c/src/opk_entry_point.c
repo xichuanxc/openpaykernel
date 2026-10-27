@@ -52,6 +52,7 @@ static kernel_fn kernel_for(uint32_t k)
     case OPK_KERNEL_MASTERCARD: return opk_kernel_mastercard;
     case OPK_KERNEL_VISA: return opk_kernel_visa;
     case OPK_KERNEL_UNIONPAY: return opk_kernel_visa;
+    case OPK_KERNEL_DISCOVER: return opk_kernel_discover;
     default: return NULL;
     }
 }
@@ -59,7 +60,7 @@ static kernel_fn kernel_for(uint32_t k)
 static int kernel_supported(uint32_t k) { return kernel_for(k) != NULL; }
 
 /* Kernels whose PDOL carries the Terminal Transaction Qualifiers built at pre-processing */
-static int uses_ttq(uint32_t k) { return k == OPK_KERNEL_VISA || k == 6u || k == OPK_KERNEL_UNIONPAY; }
+static int uses_ttq(uint32_t k) { return k == OPK_KERNEL_VISA || k == OPK_KERNEL_DISCOVER || k == OPK_KERNEL_UNIONPAY; }
 
 static void try_again(opk_outcome *out)
 {
