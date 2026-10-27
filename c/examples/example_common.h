@@ -58,7 +58,7 @@ static void add_tlv4(opk_aid_config *a, uint32_t tag, const char *hex)
     }
 }
 
-/* Visa + UnionPay + Discover + Amex + Mastercard study configuration (no CA public keys: ODA will fail, as expected). */
+/* Visa + UnionPay + Discover + Amex + JCB + Mastercard study configuration (no CA public keys: ODA will fail, as expected). */
 static void example_env(opk_env *env)
 {
     memset(env, 0, sizeof *env);
@@ -105,6 +105,17 @@ static void example_env(opk_env *env)
     memcpy(amex->tac_denial, "\x00\x10\x00\x00\x00", 5);
     memcpy(amex->tac_online, "\xDE\x00\xFC\x98\x00", 5);
     add_tlv4(amex, 0x9F6E, "D8E00003"); /* Enhanced Contactless Reader Capabilities */
+
+    opk_aid_config *jcb = &env->aids[env->aid_count++];
+    opk_aid_defaults(jcb, (const uint8_t *)"\xA0\x00\x00\x00\x65\x10\x10", 7);
+    jcb->kernel_id = OPK_KERNEL_JCB;
+    jcb->floor_limit = 10000;
+    jcb->cl_transaction_limit = 50000;
+    jcb->cvm_required_limit = 3000;
+    memcpy(jcb->tac_default, "\xFC\x60\x24\xA8\x00", 5);
+    memcpy(jcb->tac_denial, "\x00\x10\x00\x00\x00", 5);
+    memcpy(jcb->tac_online, "\xFC\x60\xAC\xF8\x00", 5);
+    add_tlv4(jcb, 0x9F53, "720000"); /* Terminal Interchange Profile */
 
     opk_aid_config *mc = &env->aids[env->aid_count++];
     opk_aid_defaults(mc, (const uint8_t *)"\xA0\x00\x00\x00\x04\x10\x10", 7);

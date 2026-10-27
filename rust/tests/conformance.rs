@@ -7,7 +7,8 @@ use std::collections::BTreeMap;
 
 use common::*;
 use openpaykernel::{
-    AmexKernel, ContactKernel, DiscoverKernel, EntryPoint, MastercardKernel, Outcome, UnionPayKernel, VisaKernel,
+    AmexKernel, ContactKernel, DiscoverKernel, EntryPoint, JcbKernel, MastercardKernel, Outcome, UnionPayKernel,
+    VisaKernel,
 };
 
 fn run(v: &common::Vector, reader: &mut Replay) -> (Outcome, BTreeMap<u32, Vec<u8>>) {
@@ -25,6 +26,7 @@ fn run(v: &common::Vector, reader: &mut Replay) -> (Outcome, BTreeMap<u32, Vec<u
                 Box::new(UnionPayKernel),
                 Box::new(DiscoverKernel),
                 Box::new(AmexKernel),
+                Box::new(JcbKernel),
             ],
         );
         let o = ep.process(reader, &v.txn, None);

@@ -98,6 +98,12 @@ fn environment() -> Environment {
     amex.cl_transaction_limit = Some(50000);
     amex.cvm_required_limit = Some(3000);
     amex.extra.insert(0x9F6E, vec![0xD8, 0xE0, 0x00, 0x03]); // Enhanced Contactless Reader Capabilities
+    let mut jcb = AidConfig::new(&[0xA0, 0x00, 0x00, 0x00, 0x65, 0x10, 0x10]);
+    jcb.kernel_id = 5;
+    jcb.floor_limit = 10000;
+    jcb.cl_transaction_limit = Some(50000);
+    jcb.cvm_required_limit = Some(3000);
+    jcb.extra.insert(0x9F53, vec![0x72, 0x00, 0x00]); // Terminal Interchange Profile
     let mut upi = AidConfig::new(&[0xA0, 0x00, 0x00, 0x03, 0x33, 0x01, 0x01]); // partial match: 0101xx
     upi.kernel_id = 7;
     upi.floor_limit = 10000;
@@ -114,7 +120,7 @@ fn environment() -> Environment {
             *b = seed as u8;
         }
     });
-    Environment::new(TerminalConfig::default(), vec![visa, mc, upi, disc, amex], CapkStore::new(), rng)
+    Environment::new(TerminalConfig::default(), vec![visa, mc, upi, disc, amex, jcb], CapkStore::new(), rng)
 }
 
 fn main() {

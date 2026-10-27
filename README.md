@@ -13,9 +13,10 @@ kernel. It comes as three implementations that behave the same way, byte for byt
 | Kernel 7: UnionPay qUICS (Book C-7) | ✅ | ✅ | ✅ |
 | Kernel 6: Discover D-PAS, EMV mode (Book C-6) | ✅ | ✅ | ✅ |
 | Kernel 4: American Express ExpressPay, EMV mode (Book C-4) | ✅ | ✅ | ✅ |
+| Kernel 5: JCB J/Speedy, EMV mode (Book C-5) | ✅ | ✅ | ✅ |
 | ODA: SDA / DDA / fDDA / CDA (RSA, SHA-1) | ✅ | ✅ | ✅ |
 | Card simulator + key/certificate generator | ✅ | n/a (replays the vectors) | n/a (replays the vectors) |
-| Conformance vectors (34 scenarios) | generates them | ✅ byte-identical | ✅ byte-identical |
+| Conformance vectors (40 scenarios) | generates them | ✅ byte-identical | ✅ byte-identical |
 
 > [!CAUTION]
 > **For study and research only. Do not use it to move real money.**
@@ -44,6 +45,7 @@ flowchart TB
         k7["<b>Kernel 7</b> · Book C-7<br/>UnionPay qUICS"]
         k6["<b>Kernel 6</b> · Book C-6<br/>Discover D-PAS"]
         k4["<b>Kernel 4</b> · Book C-4<br/>American Express"]
+        k5["<b>Kernel 5</b> · Book C-5<br/>JCB"]
     end
 
     subgraph CT["Contact"]
@@ -62,11 +64,13 @@ flowchart TB
     ep -- "kernel ID" --> k7
     ep -- "kernel ID" --> k6
     ep -- "kernel ID" --> k4
+    ep -- "kernel ID" --> k5
     k2 --> proc
     k3 --> proc
     k7 --> proc
     k6 --> proc
     k4 --> proc
+    k5 --> proc
     ck --> proc
     proc --> oda
     oda --> core
@@ -76,6 +80,7 @@ flowchart TB
     k7 -.-> out
     k6 -.-> out
     k4 -.-> out
+    k5 -.-> out
     ck -.-> out
     out -.-> host
 ```
@@ -145,11 +150,35 @@ Each Python module has a matching C file and Rust module, and the shared conform
 | Kernel 2 (Mastercard) | `kernels/mastercard.py` | `opk_mastercard.c` | `kernels/mastercard.rs` | Book C-2 |
 | Kernel 3 (Visa) | `kernels/visa.py` | `opk_visa.c` | `kernels/visa.rs` | Book C-3 |
 | Kernel 4 (American Express) | `kernels/amex.py` | `opk_amex.c` | `kernels/amex.rs` | Book C-4 |
+| Kernel 5 (JCB) | `kernels/jcb.py` | `opk_jcb.c` | `kernels/jcb.rs` | Book C-5 |
 | Kernel 6 (Discover) | `kernels/discover.py` | `opk_discover.c` | `kernels/discover.rs` | Book C-6 |
 | GENERATE AC kernels: shared FCI / CDA / GENERATE AC steps | `kernels/common.py` | `opk_kernel_common.c` | `kernels/common.rs` | Book C-2 / C-4 / C-5 / C-6 |
 | Kernel 7 (UnionPay) | `kernels/unionpay.py` (Visa engine + profile) | `opk_visa.c` (shared quick-flow engine) | `kernels/unionpay.rs` | Book C-7 |
 | Contact kernel | `contact.py` | `opk_contact.c` | `contact.rs` | Books 1–4 |
 | Card simulator | `sim/card.py`, `sim/rsa.py` | — (replays vectors) | — (replays vectors) | — |
+
+### How the contactless kernels differ
+
+All six kernels share the Entry Point, the EMV processing layer and ODA. They differ in how
+the reader tells the card what it can do, where the cryptogram comes from, and how the CVM
+is chosen:
+
+| Kernel | Reader → card (in the PDOL) | Cryptogram | CVM decision | Offline authentication |
+|---|---|---|---|---|
+| 2 Mastercard (C-2) | Terminal data (9F33/9F35, DF81xx kernel config) | GENERATE AC | On-device CVM (AIP + kernel config), else CVM List with DF8118/DF8119 capabilities | CDA |
+| 3 Visa (C-3) | TTQ 9F66 (CVM required / online cryptogram required set per transaction) | in the GPO response | CTQ 9F6C + TTQ | fDDA |
+| 4 American Express (C-4) | Enhanced Contactless Reader Capabilities 9F6E | GENERATE AC | Mobile CVM Results 9F71, else CVM List with 9F6E capabilities | CDA |
+| 5 JCB (C-5) | Terminal Interchange Profile 9F53 | GENERATE AC | On-device CVM (AIP + TIP), else CVM List with TIP capabilities | CDA |
+| 6 Discover (C-6) | TTQ 9F66 | GENERATE AC | Card Processing Requirements 9F71 + TTQ | CDA |
+| 7 UnionPay (C-7) | TTQ 9F66 | in the GPO response | CTQ 9F6C + TTQ (Visa engine) | fDDA |
+
+The GENERATE AC kernels (2, 4, 5, 6) share one implementation of the FCI, CDA selection,
+GENERATE AC and CDA verification steps (`kernels/common.*`, `opk_kernel_common.c`). Kernel 7
+reuses the Visa quick-flow engine with a UnionPay profile.
+
+> Kernels 4–7 implement the public structure of their Book C specifications, but their
+> scheme-specific bit assignments have **not yet been verified** against the official texts.
+> See the [Disclaimer](#disclaimer).
 
 ### Design principles
 
@@ -932,6 +961,7 @@ openpaykernel/
 │   │   ├── kernels/unionpay.py       Kernel 7: UnionPay qUICS (Book C-7), Visa engine + UnionPay profile
 │   │   ├── kernels/mastercard.py     Kernel 2: Mastercard EMV mode (Book C-2)
 │   │   ├── kernels/amex.py           Kernel 4: American Express EMV mode (Book C-4): 9F6E reader capabilities, mobile CVM, CDA
+│   │   ├── kernels/jcb.py            Kernel 5: JCB EMV mode (Book C-5): Terminal Interchange Profile (9F53), CDA
 │   │   ├── kernels/discover.py       Kernel 6: Discover D-PAS EMV mode (Book C-6): TTQ + CPR (9F71), CDA
 │   │   ├── kernels/common.py         shared steps of the GENERATE AC kernels: FCI, CDA selection, GENERATE AC + CDA
 │   │   ├── contact.py                contact kernel + ContactHost callbacks + AutoHost
@@ -975,6 +1005,7 @@ openpaykernel/
     │   ├── opk_mastercard.c          opk_kernel_mastercard(): GPO, records, CVM, limits, TAA,
     │   │                             GENERATE AC with CDA, outcome
     │   ├── opk_amex.c                opk_kernel_amex(): 9F6E reader capabilities, mobile CVM / CVM List, CDA
+    │   ├── opk_jcb.c                 opk_kernel_jcb(): Terminal Interchange Profile, on-device CVM / CVM List, CDA
     │   ├── opk_discover.c            opk_kernel_discover(): TTQ + CPR (9F71) CVM, interface switching, CDA
     │   ├── opk_kernel_common.c       opk_k_*: shared FCI / CDA selection / GENERATE AC + CDA / outcome steps
     │   └── opk_contact.c             opk_contact_process(): PSE / list of AIDs, ODA, PIN
@@ -1007,6 +1038,7 @@ openpaykernel/
     │   ├── kernels/unionpay.rs       UnionPayKernel (Book C-7)
     │   ├── kernels/mastercard.rs     MastercardKernel (Book C-2)
     │   ├── kernels/amex.rs           AmexKernel (Book C-4)
+    │   ├── kernels/jcb.rs            JcbKernel (Book C-5)
     │   ├── kernels/discover.rs       DiscoverKernel (Book C-6)
     │   ├── kernels/common.rs         shared GENERATE AC steps (GacResult, select_cda, generate_ac_with_cda)
     │   └── contact.rs                ContactKernel<H: ContactHost>: selection, ODA, PIN, online, scripts
@@ -1022,7 +1054,9 @@ openpaykernel/
 - Kernel 2: mag-stripe mode, Data Exchange (DEK/DET), torn-transaction recovery, relay
   resistance, IDS/data storage
 - Kernel 3: Issuer Update Processing
-- Kernel 5 (JCB), in progress; then the new EMVCo C-8 kernel
+- The new EMVCo C-8 kernel
+- JCB: legacy (mag-stripe) mode, Combination Options, Issuer Update Processing
+- Verify the scheme-specific bit assignments of kernels 4, 5, 6 and 7 against the official Book C texts
 - American Express: ExpressPay mag-stripe mode, delayed authorisation, mobile "try again" flow
 - Discover: D-PAS mag-stripe (legacy) mode, Issuer Update Processing
 - RuPay and Mir: only possible with access to their licensed specifications (not public)

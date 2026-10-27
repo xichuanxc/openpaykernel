@@ -177,6 +177,7 @@ int opk_kernel_visa(const opk_kernel_ctx *k, opk_outcome *out);
 int opk_kernel_mastercard(const opk_kernel_ctx *k, opk_outcome *out);
 int opk_kernel_discover(const opk_kernel_ctx *k, opk_outcome *out);
 int opk_kernel_amex(const opk_kernel_ctx *k, opk_outcome *out);
+int opk_kernel_jcb(const opk_kernel_ctx *k, opk_outcome *out);
 
 /* shared steps of the GENERATE AC kernels (opk_kernel_common.c) */
 #define OPK_K_CDA_FAILED  (-100) /* CDA verification failed; TVR "CDA failed" is set */

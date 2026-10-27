@@ -50,7 +50,7 @@ pub use config::{AidConfig, Environment, TerminalConfig, Transaction};
 pub use contact::{AppCandidate, ContactHost, ContactKernel, ContactResult, OnlineResponse};
 pub use entry_point::{ContactlessKernel, EntryPoint};
 pub use kernels::{
-    amex::AmexKernel, discover::DiscoverKernel, mastercard::MastercardKernel, unionpay::UnionPayKernel,
+    amex::AmexKernel, discover::DiscoverKernel, jcb::JcbKernel, mastercard::MastercardKernel, unionpay::UnionPayKernel,
     visa::VisaKernel,
 };
 pub use outcome::{Cvm, Outcome, Status};

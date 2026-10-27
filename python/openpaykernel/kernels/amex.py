@@ -26,7 +26,7 @@ from ..config import bit
 from ..emvproc import (TVR_FLOOR_LIMIT, CardError, Session, check_mandatory, cvm_list_processing, parse_gpo_response,
                        processing_restrictions, read_application_data, terminal_action_analysis, RESULT_UNKNOWN)
 from ..entry_point import KernelContext
-from ..outcome import CVM, L2Error, Message, Outcome, end_application, select_next, try_another_interface
+from ..outcome import CVM, L2Error, Message, Outcome, Status, end_application, select_next, try_another_interface
 from . import common
 
 DATA_RECORD_TAGS = [0x9F02, 0x9F03, 0x9F26, 0x9F27, 0x9F36, 0x9F10, 0x9F37, 0x95, 0x9A, 0x9C, 0x5F2A, 0x82,
@@ -106,5 +106,5 @@ class AmexKernel:
 
         cid = common.generate_ac_with_cda(s, ac_type, cda)
         if cid is None:
-            return common.outcome(s, common.Status.DECLINED, cvm, DATA_RECORD_TAGS, L2Error.CAM_FAILED)
+            return common.outcome(s, Status.DECLINED, cvm, DATA_RECORD_TAGS, L2Error.CAM_FAILED)
         return common.outcome(s, common.status_for(cid), cvm, DATA_RECORD_TAGS)

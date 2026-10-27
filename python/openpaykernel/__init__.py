@@ -10,6 +10,7 @@ from .contact import AutoHost, ContactKernel, ContactResult, OnlineResponse
 from .entry_point import EntryPoint
 from .kernels.amex import AmexKernel
 from .kernels.discover import DiscoverKernel
+from .kernels.jcb import JcbKernel
 from .kernels.mastercard import MastercardKernel
 from .kernels.unionpay import UnionPayKernel
 from .kernels.visa import VisaKernel
@@ -20,5 +21,5 @@ __version__ = "0.1.0"
 __all__ = [
     "CAPK", "CAPKStore", "AidConfig", "Environment", "TerminalConfig", "Transaction", "AutoHost",
     "ContactKernel", "ContactResult", "OnlineResponse", "EntryPoint", "MastercardKernel", "VisaKernel",
-    "CVM", "Outcome", "Status", "UnionPayKernel", "DiscoverKernel", "AmexKernel",
+    "CVM", "Outcome", "Status", "UnionPayKernel", "DiscoverKernel", "AmexKernel", "JcbKernel",
 ]

@@ -20,6 +20,7 @@ VISA_AID = bytes.fromhex("A0000000031010")
 UNIONPAY_AID = bytes.fromhex("A000000333010102")
 DISCOVER_AID = bytes.fromhex("A0000001523010")
 AMEX_AID = bytes.fromhex("A00000002501")
+JCB_AID = bytes.fromhex("A0000000651010")
 TEST_RID_INDEX = 0x92
 
 

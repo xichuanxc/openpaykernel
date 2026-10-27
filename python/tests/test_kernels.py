@@ -1,4 +1,4 @@
-from openpaykernel import (AmexKernel, AutoHost, ContactKernel, DiscoverKernel, EntryPoint, MastercardKernel, OnlineResponse,
+from openpaykernel import (AmexKernel, AutoHost, ContactKernel, DiscoverKernel, EntryPoint, JcbKernel, MastercardKernel, OnlineResponse,
                            TerminalConfig, UnionPayKernel, VisaKernel)
 from openpaykernel.config import bit
 from openpaykernel.outcome import CVM, L2Error, Status
@@ -9,7 +9,7 @@ import scenarios as sc
 
 def ep(*aids):
     return EntryPoint(sc.env(list(aids)), [VisaKernel(), MastercardKernel(), UnionPayKernel(), DiscoverKernel(),
-                                                AmexKernel()])
+                                                AmexKernel(), JcbKernel()])
 
 
 # ---------------------------------------------------------------------------- Visa
@@ -381,3 +381,44 @@ def test_amex_cda_failure_declines():
 def test_amex_magstripe_only_card_is_not_supported():
     out = ep(sc.amex_aid_cfg()).process(sc.amex_card(aip=bytes.fromhex("1900")), sc.txn(1000))
     assert out.status == Status.END_APPLICATION and out.error.l2 == L2Error.MAGSTRIPE_NOT_SUPPORTED
+
+
+# ---------------------------------------------------------------------------- JCB (kernel 5)
+def test_jcb_cda_offline_approved_with_tip():
+    card = sc.jcb_card()
+    out = ep(sc.jcb_aid_cfg()).process(card, sc.txn(1000))
+    assert out.status == Status.APPROVED, out
+    gpo = [c for c, _ in card.log if c[1] == 0xA8][0]
+    assert bytes.fromhex("720000") in gpo  # TIP, CVM-required bit clear
+    assert out.data_record[0x9F34] == bytes.fromhex("1F0302")
+
+
+def test_jcb_cvm_required_online_pin_from_tip():
+    card = sc.jcb_card()
+    out = ep(sc.jcb_aid_cfg()).process(card, sc.txn(4000))
+    gpo = [c for c, _ in card.log if c[1] == 0xA8][0]
+    assert bytes.fromhex("F20000") in gpo  # byte 1 bit 8: CVM required
+    assert out.cvm == CVM.ONLINE_PIN and out.status == Status.ONLINE_REQUEST
+
+
+def test_jcb_on_device_cvm():
+    out = ep(sc.jcb_aid_cfg()).process(sc.jcb_card(aip=bytes.fromhex("1B80")), sc.txn(4000))
+    assert out.cvm == CVM.CONFIRMATION_CODE_VERIFIED and out.data_record[0x9F34] == bytes.fromhex("010002")
+
+
+def test_jcb_signature_only_reader():
+    out = ep(sc.jcb_aid_cfg(extra={0x9F53: bytes.fromhex("420000")})).process(sc.jcb_card(), sc.txn(4000))
+    assert out.cvm == CVM.SIGNATURE and out.receipt
+
+
+def test_jcb_cda_failure_declines():
+    out = ep(sc.jcb_aid_cfg()).process(sc.jcb_card(corrupt_sdad=True), sc.txn(1000))
+    assert out.status == Status.DECLINED and out.error.l2 == L2Error.CAM_FAILED
+
+
+def test_all_six_kernels_from_one_ppse_configuration():
+    # One terminal configuration with every brand; each card is routed to its own kernel
+    aids = [sc.visa_aid_cfg(), sc.mc_aid_cfg(), sc.upi_aid_cfg(), sc.discover_aid_cfg(), sc.amex_aid_cfg(),
+            sc.jcb_aid_cfg()]
+    for card in (sc.visa_card(), sc.mc_card(), sc.upi_card(), sc.discover_card(), sc.amex_card(), sc.jcb_card()):
+        assert ep(*aids).process(card, sc.txn(1000)).status == Status.APPROVED
