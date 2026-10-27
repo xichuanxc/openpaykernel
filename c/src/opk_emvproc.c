@@ -2,8 +2,6 @@
  * SPDX-License-Identifier: Apache-2.0 */
 #include "opk_internal.h"
 
-#include <stdio.h>
-
 /* ------------------------------------------------------------------ defaults */
 void opk_terminal_defaults(opk_terminal_config *t)
 {

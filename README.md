@@ -299,6 +299,168 @@ path handles `61xx` (GET RESPONSE) and `6Cxx` (wrong Le) the same way for all ke
 | `opk_oda_verify_sda()` / `_dynamic()` / `_cda()` | `oda.verify_sda()` / `verify_dynamic_signature()` / `verify_cda()` |
 | `opk_exchange()` / `opk_xchg()` | `apdu.Channel.exchange()` |
 
+## Dependencies
+
+### External dependencies
+
+Neither implementation needs a third-party library at run time.
+
+| | Python | C |
+|---|---|---|
+| **Runtime** | Python ≥ 3.10 standard library only: `dataclasses`, `typing`, `enum`, `hashlib` (SHA-1), `os` (`urandom`, the default RNG) | C99 headers `<stddef.h>`, `<stdint.h>`, `<string.h>` only. libc calls: `memcpy`, `memmove`, `memset`, `memcmp`, `strcmp`, `strncmp`, `strcpy`, `strlen`, `strchr`. No `malloc`, no `stdio`, no OS calls, no threads |
+| **Crypto** | Built in: `hashlib.sha1` and `pow()` for RSA | Built in: own SHA-1 and Montgomery RSA (`opk_crypto.c`). No OpenSSL/mbedTLS |
+| **Build** | None (pure Python); `setuptools ≥ 68` to package | CMake ≥ 3.13 and any C99 compiler (gcc, clang, MSVC-compatible) |
+| **Test / dev** | `pytest ≥ 7`; `pyflakes` (lint, CI); `random` (simulator only) | `<stdio.h>`, `<stdlib.h>` in the test programs only; ASan/UBSan (optional, CI) |
+| **CI** | GitHub Actions: Python 3.10–3.13 | GitHub Actions: Ubuntu gcc/clang, macOS clang, clang ASan+UBSan |
+
+### What the host application provides
+
+These are the kernel's only links to the outside world. Everything else is self-contained.
+
+| Dependency | Python | C | Purpose |
+|---|---|---|---|
+| Card reader | object with `transmit(capdu) -> rapdu` | `opk_reader.transmit` + `ctx` | ISO 7816 / ISO 14443 APDU exchange (PC/SC, NFC, simulator) |
+| Random numbers | `Environment.rng(n) -> bytes` | `opk_env.rng` + `rng_ctx` | Unpredictable number 9F37, random transaction selection, PIN block padding |
+| CA public keys | `CAPKStore` | `opk_env.capks[]` | Offline data authentication |
+| Terminal / AID config | `TerminalConfig`, `AidConfig` | `opk_terminal_config`, `opk_aid_config` | Capabilities, limits, TACs, kernel-specific TLVs |
+| Contact callbacks | `ContactHost`: `choose_application`, `enter_pin`, `go_online` | `opk_contact_host` (same three) | Cardholder and acquirer interaction |
+
+### Python module dependencies
+
+Arrows point from a module to the modules it imports (within `openpaykernel`).
+
+```mermaid
+flowchart BT
+    tags["tags.py"]
+    tlv["tlv.py"]
+    dol["dol.py"]
+    apdu["apdu.py"]
+    capk["capk.py"]
+    oda["oda.py"]
+    outcome["outcome.py"]
+    config["config.py"]
+    emvproc["emvproc.py"]
+    ep["entry_point.py"]
+    visa["kernels/visa.py"]
+    mc["kernels/mastercard.py"]
+    contact["contact.py"]
+    init["__init__.py (public API)"]
+    rsa["sim/rsa.py"]
+    card["sim/card.py"]
+
+    tlv --> tags
+    dol --> tags
+    dol --> tlv
+    apdu --> tlv
+    oda --> capk
+    oda --> tlv
+    config --> capk
+    emvproc --> apdu
+    emvproc --> dol
+    emvproc --> oda
+    emvproc --> tlv
+    emvproc --> tags
+    emvproc --> config
+    ep --> apdu
+    ep --> tlv
+    ep --> config
+    ep --> outcome
+    visa --> emvproc
+    visa --> ep
+    visa --> outcome
+    visa --> oda
+    visa --> dol
+    mc --> emvproc
+    mc --> ep
+    mc --> outcome
+    mc --> oda
+    contact --> emvproc
+    contact --> outcome
+    contact --> oda
+    contact --> dol
+    init --> contact
+    init --> ep
+    init --> visa
+    init --> mc
+    card --> rsa
+    card --> capk
+    card --> dol
+    card --> tlv
+```
+
+| Module | Imports from `openpaykernel` | Standard library |
+|---|---|---|
+| `tags.py` | — | `typing` |
+| `tlv.py` | `tags` | `dataclasses`, `typing` |
+| `dol.py` | `tags`, `tlv` | `typing` |
+| `apdu.py` | `tlv` | `dataclasses`, `typing` |
+| `capk.py` | — | `dataclasses`, `hashlib` |
+| `oda.py` | `capk`, `tlv` | `dataclasses`, `hashlib` |
+| `outcome.py` | — | `dataclasses`, `enum` |
+| `config.py` | `capk` | `dataclasses`, `os`, `typing` |
+| `emvproc.py` | `apdu`, `dol`, `oda`, `tlv`, `tags`, `config` | `dataclasses`, `typing` |
+| `entry_point.py` | `apdu`, `tlv`, `config`, `outcome` | `dataclasses`, `typing` |
+| `kernels/visa.py` | `apdu`, `dol`, `oda`, `tlv`, `config`, `emvproc`, `entry_point`, `outcome` | — |
+| `kernels/mastercard.py` | `apdu`, `oda`, `tlv`, `config`, `emvproc`, `entry_point`, `outcome` | — |
+| `contact.py` | `apdu`, `dol`, `oda`, `tlv`, `config`, `emvproc`, `outcome` | `dataclasses`, `hashlib`, `typing` |
+| `sim/rsa.py` | — | `dataclasses`, `hashlib`, `random` |
+| `sim/card.py` | `dol`, `tlv`, `capk`, `sim.rsa` | `dataclasses`, `hashlib` |
+
+### C file dependencies
+
+Every source file includes only `opk_internal.h`, which includes the public
+`openpaykernel/openpaykernel.h`. The graph shows which files call functions defined in
+which other files.
+
+```mermaid
+flowchart BT
+    hdr["openpaykernel.h<br/>(public API · stddef.h, stdint.h)"]
+    ih["opk_internal.h<br/>(string.h)"]
+    tlvc["opk_tlv.c<br/>TLV · DB · DOL"]
+    crypto["opk_crypto.c<br/>SHA-1 · RSA"]
+    odac["opk_oda.c<br/>ODA"]
+    proc["opk_emvproc.c<br/>shared EMV processing"]
+    epc["opk_entry_point.c"]
+    visac["opk_visa.c"]
+    mcc["opk_mastercard.c"]
+    ctc["opk_contact.c"]
+
+    ih --> hdr
+    tlvc --> ih
+    crypto --> ih
+    odac --> crypto
+    odac --> tlvc
+    proc --> odac
+    proc --> tlvc
+    visac --> proc
+    visac --> odac
+    visac --> tlvc
+    mcc --> proc
+    mcc --> odac
+    mcc --> tlvc
+    ctc --> proc
+    ctc --> odac
+    ctc --> crypto
+    ctc --> tlvc
+    epc --> proc
+    epc --> tlvc
+    epc --> visac
+    epc --> mcc
+```
+
+| File | Calls into | libc |
+|---|---|---|
+| `opk_tlv.c` | — | `memmove`, `memcpy`, `memset` |
+| `opk_crypto.c` | — | `memcpy`, `memset` |
+| `opk_oda.c` | `opk_crypto.c`, `opk_tlv.c` | `memcpy`, `memcmp`, `strcmp`, `strncmp` |
+| `opk_emvproc.c` | `opk_oda.c`, `opk_tlv.c` | `memcpy`, `memset`, `memcmp`, `strcmp`, `strcpy` |
+| `opk_visa.c` | `opk_emvproc.c`, `opk_oda.c`, `opk_tlv.c` | `memcpy`, `memcmp`, `strcmp`, `strchr` |
+| `opk_mastercard.c` | `opk_emvproc.c`, `opk_oda.c`, `opk_tlv.c` | `memcpy` |
+| `opk_contact.c` | `opk_emvproc.c`, `opk_oda.c`, `opk_crypto.c`, `opk_tlv.c` | `memcpy`, `memset`, `memcmp`, `strlen` |
+| `opk_entry_point.c` | `opk_emvproc.c`, `opk_tlv.c`, `opk_visa.c`, `opk_mastercard.c` | `memcpy`, `memset`, `memcmp` |
+| `tests/test_core.c` | library internals | `stdio` |
+| `tests/test_vectors.c` | public API + internals | `stdio`, `stdlib` (file I/O, `getenv`, `strtol`) |
+
 ## Quick start
 
 ```bash

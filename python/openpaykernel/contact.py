@@ -10,6 +10,7 @@ authorisation.
 """
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -424,7 +425,6 @@ class ContactKernel:
                 tdol = s.aid_cfg.default_tdol
                 if tdol:
                     s.set_tvr(TVR_DEFAULT_TDOL)
-            import hashlib
             db[0x98] = hashlib.sha1(s.build_dol(tdol)).digest()
         data = s.build_dol(cdol)
         if first:

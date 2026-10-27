@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Iterator
 
+from .tags import is_terminal_source
+
 
 class TLVError(ValueError):
     pass
@@ -195,7 +197,6 @@ class TLVDatabase:
     def store_card_data(self, nodes: "list[TLV]") -> None:
         """Store the primitive TLVs of a card response. Terminal-sourced tags are ignored:
         a card must never be able to overwrite terminal data (Book 3 section 7, Book C-2 4.1)."""
-        from .tags import is_terminal_source
         for n in flatten(nodes):
             if not is_terminal_source(n.tag):
                 self._d[n.tag] = n.value

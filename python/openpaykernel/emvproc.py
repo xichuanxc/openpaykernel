@@ -9,6 +9,7 @@ from typing import Callable
 
 from . import apdu, dol, oda, tlv
 from .config import AidConfig, Bits, Environment, Transaction, bcd_to_int, bit
+from .tags import is_terminal_source
 from .tlv import TLVDatabase
 
 
@@ -175,7 +176,6 @@ def read_application_data(s: Session, *, allow_duplicates: bool = False) -> None
 
 
 def _terminal_tag(t: int) -> bool:
-    from .tags import is_terminal_source
     return is_terminal_source(t)
 
 
