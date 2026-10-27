@@ -68,8 +68,9 @@ int opk_kernel_mastercard(const opk_kernel_ctx *k, opk_outcome *out)
     }
     if (opk_tlv_check(s->rsp, s->rsp_len) || opk_parse_gpo(s))
         goto card_error;
-    uint8_t aip[2];
-    memcpy(aip, opk_db_get(db, 0x82, &l), 2);
+    uint8_t aip[2] = {0, 0};
+    v = opk_db_get(db, 0x82, &l);
+    memcpy(aip, v, l < 2 ? l : 2); /* a short AIP reads as zero bits */
     if (!(BIT(aip, 2, 8) && !((kc >> 6) & 1))) {
         opk_outcome_end(out, OPK_L2_MAGSTRIPE_NOT_SUPPORTED, 0, OPK_MSG_INSERT_SWIPE_OR_TRY_ANOTHER);
         return OPK_OK;
@@ -97,7 +98,7 @@ int opk_kernel_mastercard(const opk_kernel_ctx *k, opk_outcome *out)
         size_t il;
         const uint8_t *idx = opk_db_get(db, 0x8F, &il);
         const uint8_t *adf = opk_db_get(db, 0x9F06, &l);
-        if (!idx || !opk_find_capk(k->env, adf, idx[0], k->txn->date))
+        if (!idx || il < 1 || !opk_find_capk(k->env, adf, idx[0], k->txn->date))
             TVR(s, 1, 3);
     }
     opk_session_sync(s);

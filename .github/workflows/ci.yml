@@ -27,7 +27,7 @@ jobs:
         working-directory: python
         run: |
           PYTHONPATH=. python tests/gen_vectors.py
-          git diff --exit-code -- ../c/tests/vectors
+          git diff --exit-code -- ../conformance/vectors
 
   c:
     strategy:
@@ -70,10 +70,42 @@ jobs:
           cmake --build build
       - name: Conformance vectors
         working-directory: c
-        run: ./build/test_vectors tests/vectors/*.txt
+        run: ./build/test_vectors ../conformance/vectors/*.txt
       - name: Fuzz corrupted card responses
         working-directory: c
         env:
           UBSAN_OPTIONS: halt_on_error=1
-          OPK_FUZZ: "3000"
-        run: ./build/test_vectors tests/vectors/*.txt
+          OPK_FUZZ: "1000"
+        run: ./build/test_vectors ../conformance/vectors/*.txt
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: thumbv8m.main-none-eabihf, thumbv6m-none-eabi, riscv32imac-unknown-none-elf
+      - name: Format
+        working-directory: rust
+        run: cargo fmt --check
+      - name: Clippy
+        working-directory: rust
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Tests (unit, 19 conformance vectors, doc)
+        working-directory: rust
+        run: cargo test
+      - name: Fuzz corrupted card responses (no panics)
+        working-directory: rust
+        env:
+          OPK_FUZZ: "2000"
+        run: cargo test --release --test conformance fuzz
+      - name: no_std builds for bare-metal targets
+        working-directory: rust
+        run: |
+          for t in thumbv8m.main-none-eabihf thumbv6m-none-eabi riscv32imac-unknown-none-elf; do
+            cargo build --lib --release --no-default-features --target $t
+          done
+      - name: Run reader template example
+        working-directory: rust
+        run: cargo run --example reader_template

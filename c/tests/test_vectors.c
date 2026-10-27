@@ -94,7 +94,9 @@ static int replay(void *ctx, const uint8_t *c, size_t cl, uint8_t *r, size_t *rl
         int i = t->pos < t->n ? t->pos++ : (int)(fuzz_rand() % (unsigned)t->n);
         memcpy(r, t->r[i], t->rl[i]);
         *rl = t->rl[i];
-        int flips = (int)(fuzz_rand() % 4);
+        if (fuzz_rand() % 6 != 0)
+            return 0; /* corrupt about one response in six, so transactions get deep */
+        int flips = 1 + (int)(fuzz_rand() % 3);
         for (int k = 0; k < flips && *rl > 2; k++)
             r[fuzz_rand() % (*rl - 2)] ^= (uint8_t)(1u << (fuzz_rand() % 8));
         if (fuzz_rand() % 8 == 0 && *rl > 3) { /* truncate, keep SW */

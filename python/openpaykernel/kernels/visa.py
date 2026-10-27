@@ -76,6 +76,8 @@ class VisaKernel:
             parse_afl(db[0x94])
             read_application_data(s)
 
+        if 0x9F27 in db and not db[0x9F27]:
+            return end_application(L2Error.CARD_DATA_ERROR)
         cid = (db[0x9F27][0] & 0xC0) if 0x9F27 in db else cid_from_iad(db.get(0x9F10))
         if cid not in (AAC, TC, ARQC):
             return end_application(L2Error.CARD_DATA_ERROR)

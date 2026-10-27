@@ -196,7 +196,7 @@ def check_mandatory(s: Session, tags: list[int]) -> None:
 def retrieve_issuer_pk(s: Session) -> oda.PublicKey:
     rid = (s.db.get(0x4F) or s.db.get(0x84) or b"")[:5]
     idx = s.db.get(0x8F)
-    if idx is None or 0x90 not in s.db or 0x9F32 not in s.db or 0x5A not in s.db:
+    if not idx or 0x90 not in s.db or 0x9F32 not in s.db or 0x5A not in s.db:
         raise oda.OdaError("issuer certificate data missing")
     capk = s.env.capks.find(rid, idx[0], s.txn.date)
     if capk is None:
@@ -421,9 +421,9 @@ def terminal_risk_management(s: Session, *, floor_limit: int | None = None, velo
                 s.set_tvr(TVR_LCOL_EXCEEDED)
                 s.set_tvr(TVR_UCOL_EXCEEDED)
             else:
-                if a - l_ > s.db[0x9F14][0]:
+                if a - l_ > (s.db[0x9F14] or b"\x00")[0]:
                     s.set_tvr(TVR_LCOL_EXCEEDED)
-                if a - l_ > s.db[0x9F23][0]:
+                if a - l_ > (s.db[0x9F23] or b"\x00")[0]:
                     s.set_tvr(TVR_UCOL_EXCEEDED)
             if l_ == 0:
                 s.set_tvr(TVR_NEW_CARD)
@@ -489,7 +489,7 @@ def parse_generate_ac(rsp: bytes, db: TLVDatabase) -> list[tlv.TLV]:
         return []
     if n.tag == 0x77:
         db.store_card_data(n.children)
-        if 0x9F27 not in db or 0x9F36 not in db:
+        if not db.get(0x9F27) or 0x9F36 not in db:
             raise CardError("GENERATE AC response missing CID or ATC")
         return n.children
     raise CardError("unexpected GENERATE AC template")

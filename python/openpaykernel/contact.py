@@ -372,7 +372,7 @@ class ContactKernel:
         r = s.chan.exchange(apdu.get_data(0x9F17))
         if r.ok:
             t = tlv.find(r.data, 0x9F17)
-            if t is not None:
+            if t is not None and t.value:
                 tries = t.value[0]
                 if tries == 0:
                     s.set_tvr(TVR_PIN_TRY_LIMIT)
@@ -383,7 +383,10 @@ class ContactKernel:
             if pin is None:
                 s.set_tvr(TVR_PIN_NOT_ENTERED)
                 return RESULT_FAILED
-            block = apdu.plaintext_pin_block(pin)
+            try:
+                block = apdu.plaintext_pin_block(pin)
+            except ValueError:  # not 4..12 digits: treat as a failed PIN entry (same as C/Rust)
+                return RESULT_FAILED
             if enciphered:
                 try:
                     cmd = self._enciphered_verify(s, block)

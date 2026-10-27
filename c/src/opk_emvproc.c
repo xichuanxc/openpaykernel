@@ -458,7 +458,7 @@ int opk_retrieve_issuer_pk(opk_session *s, opk_pubkey *out)
     if (!rid)
         rid = opk_db_get(s->db, 0x84, &l);
     const uint8_t *idx = opk_db_get(s->db, 0x8F, &il);
-    if (!rid || l < 5 || !idx || !opk_db_has(s->db, 0x90) || !opk_db_has(s->db, 0x9F32))
+    if (!rid || l < 5 || !idx || il < 1 || !opk_db_has(s->db, 0x90) || !opk_db_has(s->db, 0x9F32))
         return OPK_ERR_ODA;
     const opk_capk *capk = opk_find_capk(s->env, rid, idx[0], s->txn->date);
     if (!capk)
@@ -722,7 +722,7 @@ void opk_terminal_risk_management(opk_session *s)
     size_t l1, l2;
     const uint8_t *lcol = opk_db_get(s->db, 0x9F14, &l1), *ucol = opk_db_get(s->db, 0x9F23, &l2);
     if (lcol && ucol) {
-        uint8_t lc = lcol[0], uc = ucol[0];
+        uint8_t lc = l1 ? lcol[0] : 0, uc = l2 ? ucol[0] : 0;
         uint8_t atc[8], last[8];
         size_t al, ll;
         int ok_atc = get_data(s, 0x9F36, atc, &al);
@@ -816,7 +816,8 @@ int opk_parse_generate_ac(opk_session *s, const uint8_t **children, size_t *chil
         while ((r = opk_tlv_next(t.val, t.len, &p2, &c)) == 1)
             if (!opk_tag_is_terminal(c.tag) && !opk_tlv_constructed(c.tag))
                 opk_db_set(s->db, c.tag, c.val, c.len);
-        if (!opk_db_has(s->db, 0x9F27) || !opk_db_has(s->db, 0x9F36))
+        size_t cl;
+        if (!opk_db_get(s->db, 0x9F27, &cl) || cl < 1 || !opk_db_has(s->db, 0x9F36))
             return OPK_ERR_CARD;
         *children = t.val;
         *children_len = t.len;

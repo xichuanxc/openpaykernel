@@ -5,7 +5,7 @@ reference kernel against the simulated card, and the expected outcome. The C tes
 replays the card responses and checks that it sends identical commands and reaches the
 same outcome.
 
-    python3 tests/gen_vectors.py ../c/tests/vectors
+    python3 tests/gen_vectors.py ../conformance/vectors
 """
 from __future__ import annotations
 
@@ -149,5 +149,4 @@ def main(outdir: str) -> None:
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), "..", "..", "c", "tests",
-                                                             "vectors"))
+    main(sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), "..", "..", "conformance", "vectors"))

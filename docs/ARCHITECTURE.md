@@ -40,7 +40,7 @@
    indication (L1/L2/SW), receipt and field-off are reported the same way by contact and
    contactless kernels. The data record is the transaction's TLV database.
 3. **One TLV database per transaction.** Terminal data is loaded first. Card data
-   can never overwrite terminal-sourced tags (`store_card_data` / `opk_tlv_store_card`),
+   can never overwrite terminal-sourced tags (`store_card_data` / `opk_tlv_store_card` / `TlvDb::store_card_data`),
    and duplicate card data objects in records are rejected.
 4. **Kernels are plug-ins** keyed by kernel ID. The Entry Point resolves the ID from
    Kernel Identifier `9F2A` or from the RID default (Book B 3.3.2.5).
@@ -49,8 +49,13 @@
 6. **The C library has fixed memory.** All buffers are caller-owned or on the stack (around
    4 KB per kernel call), and there is no global mutable state.
 7. **Deterministic by injection.** The unpredictable number and every other random value come
-   from `Environment.rng` / `opk_env.rng`. This is what makes cross-language transcript
-   testing possible.
+   from `Environment.rng` / `opk_env.rng` / the Rust `Environment` RNG closure. This is what
+   makes cross-language transcript testing possible.
+8. **The Rust crate is memory-safe and portable.** It is `#![no_std]` + `alloc` with
+   `#![forbid(unsafe_code)]` and no dependencies. Card data is only read through bounds-checked
+   accessors (`get()`, slices validated first), so malformed input becomes a card-data
+   outcome, never a panic. Plug-in kernels implement the `ContactlessKernel` trait, and the
+   contact kernel is generic over a `ContactHost` implementation.
 
 ## Data flow of a contactless transaction
 
@@ -65,12 +70,13 @@
 
 ## Testing strategy
 
-| Layer | Python | C |
-|---|---|---|
-| Primitives (TLV, DOL, SHA-1, RSA, certificates) | `test_core.py` | `test_core.c` |
-| End-to-end flows vs. simulated cards | `test_kernels.py` (29 scenarios) | — |
-| Cross-language conformance (byte-exact APDUs) | `gen_vectors.py` generates | `test_vectors.c` replays (19) |
-| Robustness against corrupted card data | `test_robustness.py` | `OPK_FUZZ` mode under ASan/UBSan |
+| Layer | Python | C | Rust |
+|---|---|---|---|
+| Primitives (TLV, DOL, SHA-1, RSA, certificates) | `test_core.py` | `test_core.c` | `tests/core.rs` |
+| End-to-end flows vs. simulated cards | `test_kernels.py` (29 scenarios) | — | — |
+| Hardware adapter path | `test_hardware_adapter.py` (fake pyscard) | `reader_template` example (CI) | `reader_template` example (CI) |
+| Cross-language conformance (byte-exact APDUs) | `gen_vectors.py` generates `conformance/vectors` | `test_vectors.c` replays (19) | `tests/conformance.rs` replays (19) |
+| Robustness against corrupted card data | `test_robustness.py` | `OPK_FUZZ` mode under ASan/UBSan | `OPK_FUZZ` no-panic test |
 
 The simulator (`openpaykernel/sim`) personalises cards with real RSA keys and certificates. The CA
 key is 1024-bit and the issuer key is 1024-bit, which forces an issuer PK remainder. The

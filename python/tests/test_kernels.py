@@ -260,3 +260,13 @@ def test_card_cannot_overwrite_terminal_data():
     assert res.data[0x9F35] == b"\x22"
     out = ep(sc.visa_aid_cfg()).process(sc.visa_card(extra_fci=encode(0x9F66, b"\xFF" * 4)), sc.txn(1000))
     assert out.data_record[0x9F66] == bytes.fromhex("36004000")
+
+
+def test_malformed_pin_from_host_is_a_failed_cvm():
+    # rule 01 03 without "apply next": a failed PIN ends CVM processing as failed
+    res = contact(sc.contact_card(cvm_list=bytes.fromhex("000000000000000001031F03")), AutoHost(pin="12"))
+    assert res.data[0x9F34] == bytes.fromhex("010301")
+    assert bit(res.data[0x95], 3, 8)  # cardholder verification was not successful
+    # rule 41 03 ("apply next"): falls through to No CVM required
+    res = contact(sc.contact_card(cvm_list=bytes.fromhex("000000000000000041031F03")), AutoHost(pin="12"))
+    assert res.data[0x9F34] == bytes.fromhex("1F0302")

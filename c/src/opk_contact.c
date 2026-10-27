@@ -509,8 +509,9 @@ static int process_app(opk_session *s, const opk_contact_host *host, const uint8
     static const uint32_t mand[] = {0x5F24, 0x5A, 0x8C, 0x8D};
     if (opk_check_mandatory(s, mand, 4))
         return OPK_ERR_CARD;
-    uint8_t aip[2];
-    memcpy(aip, opk_db_get(db, 0x82, &l), 2);
+    uint8_t aip[2] = {0, 0};
+    const uint8_t *aipv = opk_db_get(db, 0x82, &l);
+    memcpy(aip, aipv, l < 2 ? l : 2); /* a short AIP reads as zero bits */
     const uint8_t *caps = s->env->terminal.capabilities;
 
     int cda = do_oda(s, aip, caps);

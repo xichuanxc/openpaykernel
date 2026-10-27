@@ -23,7 +23,7 @@ add_executable(test_core tests/test_core.c)
 target_link_libraries(test_core openpaykernel)
 add_test(NAME core COMMAND test_core)
 
-file(GLOB VECTORS ${CMAKE_CURRENT_SOURCE_DIR}/tests/vectors/*.txt)
+file(GLOB VECTORS ${CMAKE_CURRENT_SOURCE_DIR}/../conformance/vectors/*.txt)
 add_executable(test_vectors tests/test_vectors.c)
 target_link_libraries(test_vectors openpaykernel)
 add_test(NAME vectors COMMAND test_vectors ${VECTORS})

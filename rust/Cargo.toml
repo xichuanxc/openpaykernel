@@ -1,0 +1,21 @@
+[package]
+name = "openpaykernel"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "Apache-2.0"
+description = "Study/research EMV Level 2 kernel (not certified, no warranty): contact, contactless Entry Point, Visa C-3, Mastercard C-2"
+readme = "../README.md"
+repository = "https://github.com/xichuanxc/openpaykernel"
+keywords = ["emv", "payment", "smartcard", "nfc", "no-std"]
+categories = ["no-std", "embedded", "cryptography"]
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]
+# none: SHA-1 and RSA are implemented in-crate
+
+[lib]
+path = "src/lib.rs"

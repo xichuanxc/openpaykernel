@@ -192,8 +192,11 @@ int opk_kernel_visa(const opk_kernel_ctx *k, opk_outcome *out)
     }
 
     size_t l;
-    const uint8_t *cidv = opk_db_get(db, 0x9F27, &l);
+    size_t cl2;
+    const uint8_t *cidv = opk_db_get(db, 0x9F27, &cl2);
     const uint8_t *iad = opk_db_get(db, 0x9F10, &l);
+    if (cidv && cl2 < 1)
+        goto card_error;
     int cid = cidv ? (cidv[0] & 0xC0) : cid_from_iad(iad, l);
     if (cid != AC_AAC && cid != AC_TC && cid != AC_ARQC)
         goto card_error;

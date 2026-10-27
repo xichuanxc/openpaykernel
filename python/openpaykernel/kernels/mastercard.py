@@ -70,7 +70,7 @@ class MastercardKernel:
             s.set_tvr(TVR_ODA_NOT_PERFORMED)
         else:
             rid = db[0x9F06][:5]
-            if 0x8F not in db or s.env.capks.find(rid, db[0x8F][0], s.txn.date) is None:
+            if not db.get(0x8F) or s.env.capks.find(rid, db[0x8F][0], s.txn.date) is None:
                 s.set_tvr(TVR_CDA_FAILED)
 
         # 4. Processing restrictions
