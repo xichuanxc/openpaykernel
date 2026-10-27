@@ -10,6 +10,9 @@
 
 #define MAX_APDUS 64
 
+static int quiet; /* fuzz mode silences mismatch reports; sanitizer output still reaches stderr */
+#define LOG(...) do { if (!quiet) fprintf(stderr, __VA_ARGS__); } while (0)
+
 typedef struct {
     uint8_t c[MAX_APDUS][300];
     size_t cl[MAX_APDUS];
@@ -68,10 +71,10 @@ static void counter_rng(void *ctx, uint8_t *out, size_t n)
 
 static void hexdump(const char *p, const uint8_t *b, size_t n)
 {
-    fprintf(stderr, "%s", p);
+    LOG("%s", p);
     for (size_t i = 0; i < n; i++)
-        fprintf(stderr, "%02X", b[i]);
-    fprintf(stderr, "\n");
+        LOG("%02X", b[i]);
+    LOG("\n");
 }
 
 /* Fuzz mode (OPK_FUZZ=<iterations>): corrupt card responses and only check for crashes,
@@ -102,7 +105,7 @@ static int replay(void *ctx, const uint8_t *c, size_t cl, uint8_t *r, size_t *rl
         return 0;
     }
     if (t->pos >= t->n) {
-        fprintf(stderr, "[%s] unexpected extra command\n", t->name);
+        LOG("[%s] unexpected extra command\n", t->name);
         hexdump("  sent: ", c, cl);
         t->mismatch = 1;
         r[0] = 0x6F; r[1] = 0x00;
@@ -112,7 +115,7 @@ static int replay(void *ctx, const uint8_t *c, size_t cl, uint8_t *r, size_t *rl
     int i = t->pos++;
     if (cl != t->cl[i] || memcmp(c, t->c[i], cl)) {
         if (!t->mismatch) {
-            fprintf(stderr, "[%s] command %d differs\n", t->name, i);
+            LOG("[%s] command %d differs\n", t->name, i);
             hexdump("  expected: ", t->c[i], t->cl[i]);
             hexdump("  sent:     ", c, cl);
         }
@@ -276,11 +279,11 @@ static int run_file(const char *path)
     if (t.mismatch)
         failures++;
     if (t.pos != t.n) {
-        fprintf(stderr, "[%s] only %d of %d APDUs exchanged\n", t.name, t.pos, t.n);
+        LOG("[%s] only %d of %d APDUs exchanged\n", t.name, t.pos, t.n);
         failures++;
     }
     if ((int)out.status != exp_status || (int)out.cvm != exp_cvm) {
-        fprintf(stderr, "[%s] outcome %s/cvm %d, expected status %d/cvm %d\n", t.name, opk_status_name(out.status),
+        LOG("[%s] outcome %s/cvm %d, expected status %d/cvm %d\n", t.name, opk_status_name(out.status),
                 out.cvm, exp_status, exp_cvm);
         failures++;
     }
@@ -288,7 +291,7 @@ static int run_file(const char *path)
         size_t l;
         const uint8_t *val = opk_db_get(&db, exp_tags[i].tag, &l);
         if (!val || l != exp_tags[i].l || memcmp(val, exp_tags[i].v, l)) {
-            fprintf(stderr, "[%s] tag %X mismatch\n", t.name, exp_tags[i].tag);
+            LOG("[%s] tag %X mismatch\n", t.name, exp_tags[i].tag);
             hexdump("  expected: ", exp_tags[i].v, exp_tags[i].l);
             if (val)
                 hexdump("  got:      ", val, l);
@@ -322,8 +325,7 @@ static int fuzz_file(const char *path, int iterations)
 {
     fuzzing = 1;
     run_file_quiet = 1;
-    FILE *devnull = freopen("/dev/null", "w", stderr);
-    (void)devnull;
+    quiet = 1;
     for (int i = 0; i < iterations; i++) {
         fuzz_seed = (unsigned)i * 2654435761u;
         run_file(path);
