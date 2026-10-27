@@ -491,21 +491,17 @@ pub fn cvm_list_processing<'a, 'r>(
         if !condition_satisfied(s, cond, x, y, &caps, method) {
             continue;
         }
-        let failed;
+        // Every path below either moves on to the next rule or ends CVM processing as failed.
         if !known_cvm(code) {
             s.set_tvr(TVR_UNRECOGNISED_CVM);
             if apply_next {
                 continue;
             }
-            failed = true;
-        } else if code == CVM_FAIL {
-            failed = true;
-        } else if !terminal_supports_cvm(&caps, code) {
+        } else if code != CVM_FAIL && !terminal_supports_cvm(&caps, code) {
             if apply_next {
                 continue;
             }
-            failed = true;
-        } else {
+        } else if code != CVM_FAIL {
             if let Some(out) = perform_cvm(s, code, rule, perform)? {
                 return Ok(out);
             }
@@ -513,12 +509,9 @@ pub fn cvm_list_processing<'a, 'r>(
             if apply_next {
                 continue;
             }
-            failed = true;
         }
-        if failed {
-            s.set_tvr(TVR_CVM_FAILED);
-            return Ok(CvmOutcome::with([rule[0], rule[1], RESULT_FAILED]));
-        }
+        s.set_tvr(TVR_CVM_FAILED);
+        return Ok(CvmOutcome::with([rule[0], rule[1], RESULT_FAILED]));
     }
     s.set_tvr(TVR_CVM_FAILED);
     let r = last_failed.unwrap_or([0x3F, 0x00]);
